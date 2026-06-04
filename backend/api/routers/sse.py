@@ -1,4 +1,4 @@
-"""Server-Sent Events for real-time project progress."""
+"""Server-Sent Events for real-time task progress."""
 import asyncio
 import json
 from fastapi import APIRouter, Depends, HTTPException
@@ -6,51 +6,51 @@ from sqlalchemy.orm import Session
 from uuid import UUID
 from sse_starlette.sse import EventSourceResponse
 
-from backend.core.database import Project
+from backend.core.database import Task
 from backend.api.deps import get_database
 from backend.core.auth import verify_api_key
 
-router = APIRouter(prefix="/projects", tags=["sse"], dependencies=[Depends(verify_api_key)])
+router = APIRouter(prefix="/tasks", tags=["sse"], dependencies=[Depends(verify_api_key)])
 
 
-async def project_event_generator(project_id: str, db: Session):
-    """Generate SSE events for project status updates."""
+async def task_event_generator(task_id: str, db: Session):
+    """Generate SSE events for task status updates."""
     while True:
         try:
-            project = db.query(Project).filter(Project.id == project_id).first()
+            task = db.query(Task).filter(Task.id == task_id).first()
         except Exception:
-            # Fallback for SQLite where UUID comparison may differ
-            project = db.query(Project).filter(Project.id == str(project_id)).first()
+            task = db.query(Task).filter(Task.id == str(task_id)).first()
 
-        if not project:
+        if not task:
             yield {
                 "event": "error",
-                "data": json.dumps({"detail": "Project not found"}),
+                "data": json.dumps({"detail": "Task not found"}),
             }
             break
 
         data = {
-            "status": project.status,
-            "stage": project.current_stage,
-            "progress": project.progress,
-            "updated_at": project.updated_at.isoformat() if project.updated_at else "",
+            "status": task.status,
+            "stage": task.current_stage,
+            "progress": task.progress,
+            "remaining_time": task.remaining_time,
+            "updated_at": task.updated_at.isoformat() if task.updated_at else "",
         }
         yield {"event": "status", "data": json.dumps(data)}
 
-        if project.status in ("completed", "failed"):
-            yield {"event": "done", "data": json.dumps({"final_status": project.status})}
+        if task.status in ("completed", "failed"):
+            yield {"event": "done", "data": json.dumps({"final_status": task.status})}
             break
 
         await asyncio.sleep(2)
 
 
-@router.get("/{project_id}/events")
-async def project_events(project_id: UUID, db: Session = Depends(get_database)):
-    """SSE endpoint for real-time project progress."""
-    project = db.query(Project).filter(Project.id == str(project_id)).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+@router.get("/{task_id}/events")
+async def task_events(task_id: UUID, db: Session = Depends(get_database)):
+    """SSE endpoint for real-time task progress."""
+    task = db.query(Task).filter(Task.id == str(task_id)).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
 
     return EventSourceResponse(
-        project_event_generator(str(project_id), db),
+        task_event_generator(str(task_id), db),
     )

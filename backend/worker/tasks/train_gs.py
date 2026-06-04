@@ -2,17 +2,17 @@
 import time
 from backend.worker.celery_app import app
 from backend.worker.models.trainer import Trainer
-from backend.core.database import SessionLocal, Project
+from backend.core.database import SessionLocal, Task
 
 
-def _update_project(project_id: str, stage: str, progress: int):
+def _update_task(task_id: str, stage: str, progress: int):
     try:
         db = SessionLocal()
         try:
-            project = db.query(Project).filter(Project.id == project_id).first()
-            if project:
-                project.current_stage = stage
-                project.progress = progress
+            task = db.query(Task).filter(Task.id == task_id).first()
+            if task:
+                task.current_stage = stage
+                task.progress = progress
                 db.commit()
         finally:
             db.close()
@@ -23,10 +23,9 @@ def _update_project(project_id: str, stage: str, progress: int):
 @app.task(bind=True, time_limit=3600)
 def train_gaussian_splatting(self, prev_result: dict, iterations: int = 30000):
     """Stub: Simulate 3DGS training with progress updates."""
-    project_id = prev_result["project_id"]
-    _update_project(project_id, "training", 50)
+    task_id = prev_result["task_id"]
+    _update_task(task_id, "training", 50)
 
-    # Simulate training progress
     for progress in range(50, 81, 5):
         try:
             self.update_state(
@@ -35,13 +34,13 @@ def train_gaussian_splatting(self, prev_result: dict, iterations: int = 30000):
             )
         except Exception:
             pass
-        _update_project(project_id, "training", progress)
+        _update_task(task_id, "training", progress)
         time.sleep(1)
 
-    output_dir = f"/tmp/{project_id}/models"
+    output_dir = f"/tmp/{task_id}/models"
     model_path = Trainer.train(prev_result["colmap_dir"], output_dir, iterations)
 
-    _update_project(project_id, "training", 80)
+    _update_task(task_id, "training", 80)
     try:
         self.update_state(state="PROGRESS", meta={"current": 80, "total": 100, "stage": "training"})
     except Exception:

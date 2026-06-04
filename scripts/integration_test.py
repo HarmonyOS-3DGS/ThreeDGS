@@ -2,6 +2,7 @@
 Real integration test: starts actual API + Worker, sends real HTTP requests.
 Usage: python scripts/integration_test.py
 """
+import json
 import os
 import sys
 import time
@@ -102,8 +103,9 @@ def run_test():
         print(f"   [FAIL] FAIL - status {r.status_code}")
         failed += 1
 
-    # Test 2: Upload file
-    print_step("Test 2: Upload video")
+    # Test 2: Create task
+    print_step("Test 2: Create task")
+    files_meta = json.dumps([{"original_filename": "test.mp4", "sha256": "abc", "file_size": 26}])
     with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
         f.write(b"FAKE_VIDEO_DATA_FOR_TESTING")
         temp_path = f.name
@@ -111,46 +113,46 @@ def run_test():
     try:
         with open(temp_path, "rb") as f:
             r = httpx.post(
-                f"{BASE_URL}/upload",
+                f"{BASE_URL}/tasks",
                 headers=HEADERS,
-                data={"name": "integration-test-scene"},
-                files={"file": ("test.mp4", f, "video/mp4")},
+                data={"external_code": "INT-TEST-001", "files_meta": files_meta},
+                files={"files": ("test.mp4", f, "video/mp4")},
                 timeout=10,
             )
         print(f"   Response: {r.status_code} - {r.text[:200]}")
         if r.status_code == 200:
-            project = r.json()
-            project_id = project["id"]
-            print(f"   [PASS] PASS - Created project {project_id}")
+            task = r.json()
+            task_id = task["task_id"]
+            print(f"   [PASS] PASS - Created task {task_id}")
             passed += 1
         else:
-            print(f"   [FAIL] FAIL - Upload failed")
+            print(f"   [FAIL] FAIL - Create task failed")
             failed += 1
-            project_id = None
+            task_id = None
     finally:
         os.remove(temp_path)
 
-    if not project_id:
-        print("\n[FAIL] Cannot continue without project_id")
+    if not task_id:
+        print("\n[FAIL] Cannot continue without task_id")
         api_proc.kill()
         worker_proc.kill()
         return False
 
-    # Test 3: List projects
-    print_step("Test 3: List projects")
-    r = httpx.get(f"{BASE_URL}/projects", headers=HEADERS, timeout=5)
-    if r.status_code == 200 and len(r.json()["items"]) >= 1:
-        print(f"   [PASS] PASS - Found {len(r.json()['items'])} project(s)")
+    # Test 3: Start task
+    print_step("Test 3: Start task")
+    r = httpx.post(f"{BASE_URL}/tasks/{task_id}/start", headers=HEADERS, timeout=5)
+    if r.status_code == 200 and r.json()["code"] == 0:
+        print(f"   [PASS] PASS - Task started: {r.json()}")
         passed += 1
     else:
         print(f"   [FAIL] FAIL - {r.status_code}")
         failed += 1
 
-    # Test 4: Get project details
-    print_step("Test 4: Get project details")
-    r = httpx.get(f"{BASE_URL}/projects/{project_id}", headers=HEADERS, timeout=5)
-    if r.status_code == 200 and r.json()["id"] == project_id:
-        print(f"   [PASS] PASS - Project name: {r.json()['name']}, status: {r.json()['status']}")
+    # Test 4: Query task
+    print_step("Test 4: Query task status")
+    r = httpx.get(f"{BASE_URL}/tasks/{task_id}", headers=HEADERS, timeout=5)
+    if r.status_code == 200 and r.json()["status"] == "processing":
+        print(f"   [PASS] PASS - Task status: {r.json()['status']}")
         passed += 1
     else:
         print(f"   [FAIL] FAIL - {r.status_code}")
@@ -159,7 +161,7 @@ def run_test():
     # Test 5: SSE events (short timeout, just verify endpoint works)
     print_step("Test 5: SSE events endpoint")
     try:
-        with httpx.stream("GET", f"{BASE_URL}/projects/{project_id}/events?X-API-Key={API_KEY}", timeout=3) as stream:
+        with httpx.stream("GET", f"{BASE_URL}/tasks/{task_id}/events?X-API-Key={API_KEY}", timeout=3) as stream:
             chunk = ""
             for data in stream.iter_text():
                 chunk += data
@@ -169,18 +171,18 @@ def run_test():
             print(f"   [PASS] PASS - SSE stream received data")
             passed += 1
         else:
-            print(f"   [WARN]  SKIP - SSE stream empty (project may have completed instantly)")
+            print(f"   [WARN]  SKIP - SSE stream empty")
             passed += 1
     except Exception as e:
         print(f"   [WARN]  SKIP - SSE timeout: {e}")
         passed += 1
 
     # Test 6: Wait for pipeline completion
-    print_step("Test 6: Wait for pipeline completion (stub mode ~10s)")
+    print_step("Test 6: Wait for pipeline completion (stub mode ~15s)")
     max_wait = 30
     final_status = ""
     for i in range(max_wait):
-        r = httpx.get(f"{BASE_URL}/projects/{project_id}", headers=HEADERS, timeout=5)
+        r = httpx.get(f"{BASE_URL}/tasks/{task_id}", headers=HEADERS, timeout=5)
         data = r.json()
         final_status = data["status"]
         progress = data["progress"]

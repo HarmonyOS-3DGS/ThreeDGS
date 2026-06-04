@@ -13,7 +13,7 @@ class TestCompress:
                 f.write("ply\n")
             with patch("backend.worker.tasks.compress.time.sleep"):
                 result = compress_result.run(
-                    {"project_id": "test-id", "model_path": ply}
+                    {"task_id": "test-id", "model_path": ply}
                 )
         assert "compressed_spz" in result
         assert "compressed_sog" in result
@@ -27,7 +27,7 @@ class TestCompress:
             with patch("backend.worker.tasks.compress.time.sleep"):
                 with patch("backend.worker.tasks.compress.SessionLocal") as MockSession:
                     mock_db = MockSession.return_value
-                    mock_project = mock_db.query.return_value.filter.return_value.first.return_value
-                    compress_result.run({"project_id": "test-id", "model_path": ply})
-                    assert mock_project.status == "completed"
-                    assert mock_project.progress == 100
+                    mock_task = mock_db.query.return_value.filter.return_value.first.return_value
+                    compress_result.run({"task_id": "test-id", "model_path": ply})
+                    assert mock_task.status == "completed"
+                    assert mock_task.progress == 100

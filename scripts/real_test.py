@@ -1,4 +1,5 @@
 """Real HTTP integration test - API + Worker in same process."""
+import json
 import os
 import sys
 import time
@@ -118,42 +119,43 @@ def check(name, ok, detail=""):
 
 print("\n[4/5] Running real HTTP tests")
 
-# Test 1: Upload
+# Test 1: Create task
+files_meta = json.dumps([{"original_filename": "test.mp4", "sha256": "abc", "file_size": 16}])
 with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
     f.write(b"FAKE_VIDEO_DATA")
     tmp = f.name
 
 with open(tmp, "rb") as fh:
     r = httpx.post(
-        f"{URL}/upload",
+        f"{URL}/tasks",
         headers={"X-API-Key": KEY},
-        data={"name": "test-scene"},
-        files={"file": ("a.mp4", fh, "video/mp4")},
+        data={"external_code": "INT-TEST-001", "files_meta": files_meta},
+        files={"files": ("test.mp4", fh, "video/mp4")},
         timeout=10,
     )
 os.remove(tmp)
-check("Upload file", r.status_code == 200, f"status={r.status_code}")
+check("Create task", r.status_code == 200, f"status={r.status_code}")
 
 if r.status_code != 200:
-    print("ABORT - upload failed")
+    print("ABORT - create task failed")
     sys.exit(1)
 
-pid = r.json()["id"]
-print(f"  Project ID: {pid}")
+task_id = r.json()["task_id"]
+print(f"  Task ID: {task_id}")
 
-# Test 2: List
-r = httpx.get(f"{URL}/projects", headers={"X-API-Key": KEY}, timeout=5)
-check("List projects", r.status_code == 200 and len(r.json()["items"]) >= 1, f"items={len(r.json().get('items', []))}")
+# Test 2: Start task
+r = httpx.post(f"{URL}/tasks/{task_id}/start", headers={"X-API-Key": KEY}, timeout=5)
+check("Start task", r.status_code == 200 and r.json()["code"] == 0, f"status={r.status_code}")
 
-# Test 3: Get detail
-r = httpx.get(f"{URL}/projects/{pid}", headers={"X-API-Key": KEY}, timeout=5)
-check("Get project", r.status_code == 200 and r.json()["id"] == pid, f"status={r.status_code}")
+# Test 3: Query task
+r = httpx.get(f"{URL}/tasks/{task_id}", headers={"X-API-Key": KEY}, timeout=5)
+check("Query task", r.status_code == 200 and r.json()["status"] == "processing", f"status={r.status_code}")
 
 # Test 4: Wait for completion
 print("\n  Waiting for pipeline completion (~15s)...")
 status = ""
 for i in range(40):
-    r = httpx.get(f"{URL}/projects/{pid}", headers={"X-API-Key": KEY}, timeout=5)
+    r = httpx.get(f"{URL}/tasks/{task_id}", headers={"X-API-Key": KEY}, timeout=5)
     data = r.json()
     status = data["status"]
     print(f"    t={i+1}s status={status:10} stage={data['current_stage']:15} progress={data['progress']:3}%")
@@ -164,7 +166,7 @@ for i in range(40):
 check("Pipeline completes", status == "completed", f"final={status}")
 
 # Test 5: Final state
-r = httpx.get(f"{URL}/projects/{pid}", headers={"X-API-Key": KEY}, timeout=5)
+r = httpx.get(f"{URL}/tasks/{task_id}", headers={"X-API-Key": KEY}, timeout=5)
 data = r.json()
 check("Final progress is 100%", data["progress"] == 100, f"progress={data['progress']}")
 

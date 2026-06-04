@@ -2,24 +2,25 @@
 import time
 from backend.worker.celery_app import app
 from backend.worker.models.compressor import Compressor
-from backend.core.database import SessionLocal, Project
+from backend.core.database import SessionLocal, Task
 from datetime import datetime
 
 
-def _update_project(project_id: str, stage: str, progress: int, status: str = None, error: str = None):
+def _update_task(task_id: str, stage: str, progress: int, status: str = None, error: str = None):
     try:
         db = SessionLocal()
         try:
-            project = db.query(Project).filter(Project.id == project_id).first()
-            if project:
-                project.current_stage = stage
-                project.progress = progress
+            task = db.query(Task).filter(Task.id == task_id).first()
+            if task:
+                task.current_stage = stage
+                task.progress = progress
+                task.remaining_time = max(0, 15 - progress // 7)
                 if status:
-                    project.status = status
+                    task.status = status
                 if error:
-                    project.error_message = error
+                    task.error_message = error
                 if status == "completed":
-                    project.completed_at = datetime.utcnow()
+                    task.completed_at = datetime.utcnow()
                 db.commit()
         finally:
             db.close()
@@ -29,9 +30,9 @@ def _update_project(project_id: str, stage: str, progress: int, status: str = No
 
 @app.task(bind=True, time_limit=600)
 def compress_result(self, prev_result: dict):
-    """Stub: Simulate format compression and finalize project."""
-    project_id = prev_result["project_id"]
-    _update_project(project_id, "compressing", 85)
+    """Stub: Simulate format compression and finalize task."""
+    task_id = prev_result["task_id"]
+    _update_task(task_id, "compressing", 85)
     try:
         self.update_state(state="PROGRESS", meta={"current": 85, "total": 100, "stage": "compressing"})
     except Exception:
@@ -39,11 +40,11 @@ def compress_result(self, prev_result: dict):
 
     time.sleep(2)
 
-    output_dir = f"/tmp/{project_id}/compressed"
+    output_dir = f"/tmp/{task_id}/compressed"
     spz_path = Compressor.compress_ply_to_spz(prev_result["model_path"], output_dir)
     sog_path = Compressor.compress_ply_to_sog(prev_result["model_path"], output_dir)
 
-    _update_project(project_id, "compressing", 95)
+    _update_task(task_id, "compressing", 95)
     try:
         self.update_state(state="PROGRESS", meta={"current": 95, "total": 100, "stage": "compressing"})
     except Exception:
@@ -51,7 +52,7 @@ def compress_result(self, prev_result: dict):
 
     time.sleep(1)
 
-    _update_project(project_id, "completed", 100, status="completed")
+    _update_task(task_id, "completed", 100, status="completed")
     try:
         self.update_state(state="SUCCESS", meta={"current": 100, "total": 100, "stage": "completed"})
     except Exception:

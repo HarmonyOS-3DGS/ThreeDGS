@@ -1,26 +1,54 @@
-"""Tests for project query endpoints."""
+"""Tests for task query and start endpoints."""
+import json
 import pytest
 from io import BytesIO
 
 
-class TestProjects:
-    def test_list_projects(self, client):
-        # Create a project first
-        client.post("/upload", data={"name": "list-test"}, files={"file": ("t.mp4", BytesIO(b"x"), "video/mp4")})
-        response = client.get("/projects")
-        assert response.status_code == 200
-        data = response.json()
-        assert "items" in data
-        assert "total" in data
-        assert len(data["items"]) >= 1
+class TestTasks:
+    def _create_task(self, client, code="T-001"):
+        files_meta = json.dumps([{"original_filename": "test.mp4", "sha256": "abc", "file_size": 4}])
+        return client.post(
+            "/tasks",
+            data={"external_code": code, "files_meta": files_meta},
+            files={"files": ("test.mp4", BytesIO(b"data"), "video/mp4")},
+        )
 
-    def test_get_project(self, client):
-        create = client.post("/upload", data={"name": "get-test"}, files={"file": ("t.mp4", BytesIO(b"x"), "video/mp4")})
-        project_id = create.json()["id"]
-        response = client.get(f"/projects/{project_id}")
-        assert response.status_code == 200
-        assert response.json()["name"] == "get-test"
+    def test_create_and_query(self, client):
+        create_resp = self._create_task(client)
+        task_id = create_resp.json()["task_id"]
 
-    def test_get_nonexistent_project(self, client):
-        response = client.get("/projects/123e4567-e89b-12d3-a456-426614174000")
-        assert response.status_code == 404
+        resp = client.get(f"/tasks/{task_id}")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "queued"
+
+    def test_query_nonexistent(self, client):
+        resp = client.get("/tasks/123e4567-e89b-12d3-a456-426614174000")
+        assert resp.status_code == 404
+
+    def test_start_task(self, client):
+        create_resp = self._create_task(client)
+        task_id = create_resp.json()["task_id"]
+
+        resp = client.post(f"/tasks/{task_id}/start")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["code"] == 0
+        assert data["msg"] == "success"
+        assert data["remaining_time"] == 15
+
+    def test_start_already_started(self, client):
+        create_resp = self._create_task(client)
+        task_id = create_resp.json()["task_id"]
+
+        client.post(f"/tasks/{task_id}/start")
+        resp = client.post(f"/tasks/{task_id}/start")
+        assert resp.status_code == 400
+
+    def test_query_after_start(self, client):
+        create_resp = self._create_task(client)
+        task_id = create_resp.json()["task_id"]
+
+        client.post(f"/tasks/{task_id}/start")
+        resp = client.get(f"/tasks/{task_id}")
+        assert resp.json()["status"] == "processing"

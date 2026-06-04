@@ -8,7 +8,7 @@ class TestTrain:
     def test_train_returns_model_path(self):
         with patch("backend.worker.tasks.train_gs.time.sleep"):
             result = train_gaussian_splatting.run(
-                {"project_id": "test-id", "colmap_dir": "/tmp/colmap"},
+                {"task_id": "test-id", "colmap_dir": "/tmp/colmap"},
                 iterations=100,
             )
         assert "model_path" in result
@@ -19,7 +19,7 @@ class TestTrain:
         with tempfile.TemporaryDirectory() as td:
             with patch("backend.worker.tasks.train_gs.time.sleep"):
                 result = train_gaussian_splatting.run(
-                    {"project_id": "test-id", "colmap_dir": td},
+                    {"task_id": "test-id", "colmap_dir": td},
                     iterations=100,
                 )
             assert os.path.exists(result["model_path"])

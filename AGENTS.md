@@ -19,6 +19,8 @@
 
 最终生成 SPZ/SOG 压缩格式文件，用户可通过 Web 页面查看训练进度和结果。
 
+流程为：**创建任务**（POST /tasks）→ **启动任务**（POST /tasks/{id}/start）→ **轮询/SSE 等待完成**（GET /tasks/{id} / GET /tasks/{id}/events）
+
 ---
 
 ## 技术栈
@@ -46,11 +48,11 @@
 │   │   ├── main.py             # FastAPI 入口，挂载静态文件和路由
 │   │   ├── deps.py             # 依赖注入（DB session、storage）
 │   │   ├── routers/
-│   │   │   ├── upload.py       # POST /upload（上传+启动流水线）
-│   │   │   ├── projects.py     # GET /projects /projects/{id}（查询）
-│   │   │   └── sse.py          # GET /projects/{id}/events（SSE 实时进度）
+│   │   │   ├── tasks.py        # POST /tasks, POST /tasks/{id}/start, GET /tasks/{id}
+│   │   │   └── sse.py          # GET /tasks/{id}/events（SSE 实时进度）
 │   │   └── schemas/
-│   │       └── project.py      # ProjectResponse 等 Pydantic 模型
+│   │       ├── task.py         # TaskCreate/Start/QueryResponse 等 Pydantic 模型
+│   │       └── project.py      # [废弃] 旧版 Project 模型，保留兼容
 │   ├── core/                   # 基础设施层
 │   │   ├── config.py           # Pydantic Settings 配置（.env 驱动）
 │   │   ├── database.py         # SQLAlchemy 引擎、Session、Project ORM 模型
@@ -183,16 +185,28 @@ python scripts/integration_test.py
 
 ---
 
+## Task 模型设计
+
+每个 Task 对应一次完整的训练流水线，流程为：
+1. **创建任务**（POST /tasks）→ 状态 `queued`
+2. **启动任务**（POST /tasks/{id}/start）→ 状态 `processing`，提交 Celery 链
+3. **轮询/SSE 等待** → 内部阶段：pending → extracting → colmap → training → compressing
+4. **完成** → 状态 `completed`，可下载输出文件
+
+关键 ORM 模型（`backend/core/database.py`）：
+- `Task`：id, external_code, status(queued/processing/completed/failed), current_stage, progress, remaining_time
+- `TaskFile`：id, task_id(FK), original_filename, sha256, file_size, file_path
+
 ## API 端点与鉴权
 
 所有接口（除静态文件外）需要 `X-API-Key` Header。
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/upload` | 上传视频/图片，启动训练流水线 |
-| GET | `/projects` | 列出所有项目 |
-| GET | `/projects/{id}` | 查询单个项目状态 |
-| GET | `/projects/{id}/events` | SSE 实时进度推送 |
+| POST | `/tasks` | 创建任务（上传文件 + 元数据） |
+| POST | `/tasks/{id}/start` | 启动任务流水线 |
+| GET | `/tasks/{id}` | 查询任务状态及输出文件 |
+| GET | `/tasks/{id}/events` | SSE 实时进度推送 |
 
 鉴权逻辑（`backend/core/auth.py`）：
 - `.env` 中 `API_KEY` 留空 → 关闭鉴权（开放访问）
@@ -235,7 +249,16 @@ python scripts/integration_test.py
 
 ## 流水线阶段与状态机
 
-项目状态（`ProjectStatus`）定义在 `backend/core/database.py`：
+任务状态（`TaskStatus`）定义在 `backend/core/database.py`：
+
+| 状态值 | 含义 | 说明 |
+|--------|------|------|
+| `queued` | 排队中 | 任务已创建，等待启动 |
+| `processing` | 处理中 | 流水线正在执行 |
+| `completed` | 完成 | 全部阶段执行成功 |
+| `failed` | 失败 | 流水线执行出错 |
+
+内部阶段（`TaskStage`，对外通过 `current_stage` 暴露）：
 
 | 阶段值 | 含义 | 进度范围 |
 |--------|------|---------|
@@ -255,7 +278,7 @@ Celery 任务链在 `backend/worker/tasks/pipeline.py` 中通过 `celery.chain` 
 
 - **无构建工具**：纯 HTML/CSS/JS，直接由 FastAPI `StaticFiles` 挂载服务
 - **API Key 硬编码**：`frontend/js/app.js` 和 `frontend/js/viewer.js` 中硬编码默认 Key `3dgs-dev-2026`，与 `.env` 中的默认值保持一致
-- **实时进度**：使用 SSE（`EventSource`）连接 `/projects/{id}/events`，每 2 秒推送一次状态
+- **实时进度**：使用 SSE（`EventSource`）连接 `/tasks/{id}/events`，每 2 秒推送一次状态
 - **查看器占位**：`viewer.html` 目前使用 PlayCanvas 在线查看器 iframe 作为占位方案，实际生产应替换为 Spark（Three.js）或 SuperSplat
 
 ---
@@ -264,7 +287,7 @@ Celery 任务链在 `backend/worker/tasks/pipeline.py` 中通过 `celery.chain` 
 
 1. **API Key**：生产环境必须设置强随机 `API_KEY`，前端硬编码的 Key 仅用于开发测试
 2. **CORS**：`backend/api/main.py` 中配置 `allow_origins=["*"]`，生产环境应限制为具体域名
-3. **文件上传**：`upload.py` 将上传文件保存到 `/tmp/3dgs-uploads`（Linux）或本地 `uploads/`（Windows 一键脚本），未做文件类型深度校验（仅依赖前端 `accept` 属性），生产需加强
+3. **文件上传**：`tasks.py` 将上传文件保存到 `local_storage/uploads/{task_id}/`，未做文件类型深度校验（仅依赖前端 `accept` 属性），生产需加强
 4. **MinIO**：默认使用 `minioadmin/minioadmin`，生产必须修改
 5. **.env 文件**：`.env` 和 `.env.local` 已加入 `.gitignore`，禁止提交密钥
 

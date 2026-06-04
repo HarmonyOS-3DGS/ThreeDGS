@@ -4,9 +4,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.core.database import init_db
-from backend.api.routers import upload, projects, sse
+from backend.api.routers import tasks, sse
 
-app = FastAPI(title="3DGS Platform", version="1.0.0")
+app = FastAPI(title="3DGS Platform", version="2.0.0")
 
 # CORS
 app.add_middleware(
@@ -23,8 +23,7 @@ def on_startup():
     init_db()
 
 # API routes
-app.include_router(upload.router)
-app.include_router(projects.router)
+app.include_router(tasks.router)
 app.include_router(sse.router)
 
 # Static files (frontend)

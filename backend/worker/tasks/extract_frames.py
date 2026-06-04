@@ -3,17 +3,17 @@ import time
 import os
 from backend.worker.celery_app import app
 from backend.worker.models.preprocessor import Preprocessor
-from backend.core.database import SessionLocal, Project
+from backend.core.database import SessionLocal, Task
 
 
-def _update_project(project_id: str, stage: str, progress: int):
+def _update_task(task_id: str, stage: str, progress: int):
     try:
         db = SessionLocal()
         try:
-            project = db.query(Project).filter(Project.id == project_id).first()
-            if project:
-                project.current_stage = stage
-                project.progress = progress
+            task = db.query(Task).filter(Task.id == task_id).first()
+            if task:
+                task.current_stage = stage
+                task.progress = progress
                 db.commit()
         finally:
             db.close()
@@ -22,24 +22,23 @@ def _update_project(project_id: str, stage: str, progress: int):
 
 
 @app.task(bind=True, max_retries=3, default_retry_delay=10)
-def extract_frames(self, project_id: str, video_path: str, fps: int = 5):
+def extract_frames(self, task_id: str, video_path: str, fps: int = 5):
     """Stub: Simulate FFmpeg frame extraction."""
-    _update_project(project_id, "extracting_frames", 10)
+    _update_task(task_id, "extracting", 10)
     try:
         self.update_state(state="PROGRESS", meta={"current": 10, "total": 100, "stage": "extracting"})
     except Exception:
         pass
 
-    # Simulate work
     time.sleep(2)
 
-    output_dir = f"/tmp/{project_id}/frames"
+    output_dir = f"/tmp/{task_id}/frames"
     Preprocessor.extract_frames(video_path, output_dir, fps)
 
-    _update_project(project_id, "extracting_frames", 25)
+    _update_task(task_id, "extracting", 25)
     try:
         self.update_state(state="PROGRESS", meta={"current": 25, "total": 100, "stage": "extracting"})
     except Exception:
         pass
 
-    return {"project_id": project_id, "frames_dir": output_dir}
+    return {"task_id": task_id, "frames_dir": output_dir}

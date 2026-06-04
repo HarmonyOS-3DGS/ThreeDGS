@@ -1,0 +1,362 @@
+openapi: "3.0.3"
+info:
+  title: 3DGS Platform API
+  description: |
+    3D Gaussian Splatting（3DGS）端到端训练平台 API。
+
+    用户通过三个核心接口管理训练任务：
+      1. 创建任务（POST /tasks）—— 上传文件 + 注册元数据
+      2. 启动任务（POST /tasks/{task_id}/start）—— 启动四阶段 Celery 流水线
+      3. 查询任务（GET /tasks/{task_id}）—— 获取状态、进度、下载信息
+
+    内部流水线阶段（外部只感知 queued / processing / completed / failed）：
+      pending → extracting → colmap → training → compressing → completed
+
+    支持 SSE 实时进度推送（GET /tasks/{task_id}/events）。
+  version: "2.0.0"
+
+servers:
+  - url: http://localhost:8000
+    description: 本地开发服务器
+
+paths:
+  /tasks:
+    post:
+      summary: 创建任务
+      description: |
+        上传文件并创建训练任务。请求包含外部系统唯一标识码、文件元数据 JSON 和文件二进制内容。
+
+        files_meta 为 JSON 数组字符串，每个元素包含：
+        - original_filename: 原始文件名（含后缀）
+        - sha256: 文件 SHA256 哈希
+        - file_size: 文件大小（字节）
+
+        files_meta 数组与 files 文件列表按顺序一一对应。
+      tags:
+        - tasks
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - external_code
+                - files_meta
+                - files
+              properties:
+                external_code:
+                  type: string
+                  description: 外部系统唯一标识码
+                  example: "EXT-001-20260604"
+                files_meta:
+                  type: string
+                  description: |
+                    文件元数据 JSON 数组，与 files 一一对应
+                  example: '[{"original_filename":"scene.mp4","sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","file_size":1048576}]'
+                files:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+                  description: 上传的文件二进制内容（与 files_meta 按顺序对应）
+      responses:
+        "200":
+          description: 任务创建成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskCreateResponse"
+        "400":
+          description: files_meta 与 files 数量不一致
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: "files_meta 与 files 数量不一致"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+
+  /tasks/{task_id}/start:
+    post:
+      summary: 启动任务
+      description: |
+        启动一个已创建的任务（状态为 queued），触发四阶段训练流水线。
+        启动后任务状态变为 processing。
+      tags:
+        - tasks
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          description: 任务 UUID
+          schema:
+            type: string
+            format: uuid
+            example: "550e8400-e29b-41d4-a716-446655440000"
+      responses:
+        "200":
+          description: 任务启动成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskStartResponse"
+        "400":
+          description: 任务状态不是 queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: "Task status is processing, expected queued"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "404":
+          description: 任务不存在
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: "Task not found"
+
+  /tasks/{task_id}:
+    get:
+      summary: 查询任务状态
+      description: |
+        查询任务的当前状态、进度、剩余时间和可下载的输出文件列表。
+        任务完成后 output_files 会包含生成的 SPZ/SOG 文件信息。
+      tags:
+        - tasks
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          description: 任务 UUID
+          schema:
+            type: string
+            format: uuid
+            example: "550e8400-e29b-41d4-a716-446655440000"
+      responses:
+        "200":
+          description: 任务状态信息
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskQueryResponse"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "404":
+          description: 任务不存在
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: "Task not found"
+
+  /tasks/{task_id}/events:
+    get:
+      summary: SSE 实时进度推送
+      description: |
+        通过 Server-Sent Events（SSE）实时推送训练进度。
+        每 2 秒推送一次当前状态，任务完成或失败后自动终止。
+
+        事件类型：
+        - `status`：进度更新事件（含 status / stage / progress / remaining_time / updated_at）
+        - `done`：流水线结束事件（final_status 为 completed 或 failed）
+        - `error`：任务不存在错误
+      tags:
+        - sse
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          description: 任务 UUID
+          schema:
+            type: string
+            format: uuid
+            example: "550e8400-e29b-41d4-a716-446655440000"
+      responses:
+        "200":
+          description: SSE 事件流
+          content:
+            text/event-stream:
+              schema:
+                type: object
+              example: |
+                event: status
+                data: {"status":"processing","stage":"training","progress":55,"remaining_time":8,"updated_at":"2026-06-04T12:00:00"}
+
+                event: done
+                data: {"final_status":"completed"}
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "404":
+          description: 任务不存在
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: "Task not found"
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: |
+        API 鉴权密钥。通过 X-API-Key 请求头传递。
+        - 若服务端 API_KEY 配置为空字符串，则关闭鉴权（开放访问）
+        - 默认开发 Key：`3dgs-dev-2026`
+
+  schemas:
+    FileInfo:
+      type: object
+      description: 文件元数据信息
+      properties:
+        original_filename:
+          type: string
+          description: 原始文件名（含后缀）
+          example: "scene.mp4"
+        sha256:
+          type: string
+          description: 文件 SHA256 哈希
+          example: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        file_size:
+          type: integer
+          description: 文件大小（字节）
+          example: 1048576
+        file_path:
+          type: string
+          description: 文件存储路径（本地路径或 OBS 路径）
+          example: "./local_storage/uploads/550e8400/scene.mp4"
+      required:
+        - original_filename
+        - sha256
+        - file_size
+        - file_path
+
+    TaskCreateResponse:
+      type: object
+      description: 创建任务响应
+      properties:
+        task_id:
+          type: string
+          format: uuid
+          description: 任务唯一标识
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        files:
+          type: array
+          description: 上传文件的元数据及存储路径
+          items:
+            $ref: "#/components/schemas/FileInfo"
+      required:
+        - task_id
+        - files
+
+    TaskStartResponse:
+      type: object
+      description: 启动任务响应
+      properties:
+        code:
+          type: integer
+          description: 状态码（0 表示成功）
+          example: 0
+        msg:
+          type: string
+          description: 状态消息
+          example: "success"
+        remaining_time:
+          type: integer
+          description: 预计剩余时间（秒，Stub 固定值 15）
+          example: 15
+      required:
+        - code
+        - msg
+        - remaining_time
+
+    TaskQueryResponse:
+      type: object
+      description: 查询任务状态响应
+      properties:
+        code:
+          type: integer
+          description: 状态码（0 表示成功）
+          example: 0
+        status:
+          type: string
+          description: 任务状态
+          enum:
+            - queued
+            - processing
+            - completed
+            - failed
+          example: "processing"
+        current_stage:
+          type: string
+          description: 内部流水线阶段
+          example: "training"
+        progress:
+          type: integer
+          description: 进度百分比（0-100）
+          minimum: 0
+          maximum: 100
+          example: 55
+        remaining_time:
+          type: integer
+          description: 预计剩余时间（秒）
+          example: 8
+        output_files:
+          type: array
+          description: 可下载的输出文件列表（任务完成后非空）
+          items:
+            $ref: "#/components/schemas/FileInfo"
+      required:
+        - code
+        - status
+        - current_stage
+        - progress
+        - remaining_time
+        - output_files
+
+  responses:
+    UnauthorizedError:
+      description: API Key 缺失或无效
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              detail:
+                type: string
+                example: "Invalid or missing API Key"
+
+x-tagGroups:
+  - name: 核心接口
+    tags:
+      - tasks
+  - name: 实时推送
+    tags:
+      - sse
