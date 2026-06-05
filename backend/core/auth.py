@@ -1,23 +1,33 @@
-"""Simple API Key authentication for internal use."""
+"""Authorization header authentication."""
 from fastapi import Security, HTTPException, status
 from fastapi.security import APIKeyHeader
 from backend.core.config import settings
 
-API_KEY_NAME = "X-API-Key"
-api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
+AUTH_HEADER = APIKeyHeader(name="Authorization", auto_error=False)
 
 
-def verify_api_key(api_key: str = Security(api_key_header)) -> str:
-    """Verify the API key from request header."""
-    expected = getattr(settings, "api_key", None)
-    if not expected:
-        # No key configured = open access
-        return api_key or ""
-
-    if api_key != expected:
+def _verify_auth_key(auth_header: str | None) -> str:
+    if not auth_header:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or missing API Key",
-            headers={"WWW-Authenticate": API_KEY_NAME},
+            detail={"ret": {"code": 401, "msg": "Missing Authorization header"}},
         )
-    return api_key
+    expected = getattr(settings, "api_key", None)
+    if not expected:
+        return auth_header
+    if auth_header != expected:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"ret": {"code": 401, "msg": "Invalid Authorization"}},
+        )
+    return auth_header
+
+
+def verify_app_auth(auth_header: str = Security(AUTH_HEADER)) -> str:
+    """应用级鉴权 - 用于创建任务."""
+    return _verify_auth_key(auth_header)
+
+
+def verify_project_auth(auth_header: str = Security(AUTH_HEADER)) -> str:
+    """项目级鉴权 - 用于启动、查询、SSE."""
+    return _verify_auth_key(auth_header)

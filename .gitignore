@@ -37,4 +37,7 @@ uploads/
 .DS_Store
 Thumbs.db
 
+# Dev notes
+my_to_do.md
+
 .kimi/

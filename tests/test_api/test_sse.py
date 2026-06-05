@@ -1,33 +1,33 @@
 """Tests for SSE endpoint."""
-import json
 import pytest
-from io import BytesIO
 
 from backend.core.database import Task
 
 
 class TestSSE:
     def _create_task(self, client):
-        files_meta = json.dumps([{"original_filename": "t.mp4", "sha256": "abc", "file_size": 4}])
-        return client.post(
-            "/tasks",
-            data={"external_code": "SSE-TEST", "files_meta": files_meta},
-            files={"files": ("t.mp4", BytesIO(b"data"), "video/mp4")},
-        )
+        body = {
+            "externalCode": "SSE-TEST",
+            "fileInfos": [
+                {"fileName": "t.mp4", "sha256": "abc", "contentLength": 4, "fileUrl": "/tmp/test/t.mp4"}
+            ],
+            "scene": "indoor",
+        }
+        return client.post("/tasks", json=body, headers={"projectId": "proj-01"})
 
     def test_sse_events(self, client, db_session):
         create = self._create_task(client)
-        task_id = create.json()["task_id"]
+        task_id = create.json()["taskId"]
 
         task = db_session.query(Task).filter(Task.id == task_id).first()
         task.status = "completed"
         task.current_stage = "completed"
         db_session.commit()
 
-        response = client.get(f"/tasks/{task_id}/events")
+        response = client.get(f"/tasks/{task_id}/events", headers={"projectId": "proj-01"})
         assert response.status_code == 200
         assert "text/event-stream" in response.headers.get("content-type", "")
 
     def test_sse_nonexistent(self, client):
-        response = client.get("/tasks/123e4567-e89b-12d3-a456-426614174000/events")
+        response = client.get("/tasks/999999/events", headers={"projectId": "proj-01"})
         assert response.status_code == 404

@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.core.database import init_db
 from backend.api.routers import tasks, sse
 
-app = FastAPI(title="3DGS Platform", version="2.0.0")
+app = FastAPI(title="3DGS Platform", version="3.0.0")
 
 # CORS
 app.add_middleware(

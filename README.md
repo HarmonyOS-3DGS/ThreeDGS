@@ -100,11 +100,9 @@ uvicorn backend.api.main:app --reload --port 8000
 │   ├── api/                    # FastAPI 路由和 Schema
 │   │   ├── routers/
 │   │   │   ├── tasks.py        # POST /tasks, POST /{id}/start, GET /{id}
-│   │   │   ├── sse.py          # SSE 实时进度
-│   │   │   ├── upload.py       # [废弃] 旧上传接口
-│   │   │   └── projects.py     # [废弃] 旧项目查询
+│   │   │   └── sse.py          # SSE 实时进度
 │   │   └── schemas/
-│   │       ├── task.py         # Task 相关 Pydantic 模型
+│   │       └── task.py         # Task 相关 Pydantic 模型
 │   ├── worker/                 # Celery 任务和模型 Stub
 │   │   ├── tasks/              # 4阶段流水线任务
 │   │   └── models/             # 空壳模型层
@@ -122,38 +120,40 @@ uvicorn backend.api.main:app --reload --port 8000
 
 ## API 端点
 
-所有接口需要 `X-API-Key` Header（默认: `3dgs-dev-2026`）。
+所有接口需要 `Authorization` Header（默认: `3dgs-dev-2026`）。还需 `projectId` Header。
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/tasks` | 创建任务（上传文件 + 元数据） |
+| POST | `/tasks` | 创建任务。Header: `projectId`, `Authorization`。Body: JSON（`externalCode` + `fileInfos` 数组 + `scene` 枚举） |
 | POST | `/tasks/{id}/start` | 启动任务流水线 |
 | GET | `/tasks/{id}` | 查询任务状态及输出文件 |
-| GET | `/tasks/{id}/events` | SSE 实时进度推送 |
+| GET | `/tasks/{id}/events` | SSE 实时进度推送（鉴权通过 Query 参数） |
 
 ### 鉴权
 
 通过 `.env` 中的 `API_KEY` 配置：
 - 留空 → 关闭鉴权（开放访问）
-- 设置值 → 所有请求需带 `X-API-Key: <key>`
+- 设置值 → 所有请求需带 `Authorization: <key>`
 
 ### 请求示例
 
 ```bash
 # 1. 创建任务
 curl -X POST http://localhost:8000/tasks \
-  -H "X-API-Key: 3dgs-dev-2026" \
-  -F "external_code=EXT-001" \
-  -F 'files_meta=[{"original_filename":"scene.mp4","sha256":"abc123","file_size":1048576}]' \
-  -F "files=@scene.mp4"
+  -H "Authorization: 3dgs-dev-2026" \
+  -H "projectId: proj-01" \
+  -H "Content-Type: application/json" \
+  -d '{"externalCode":"EXT-001","fileInfos":[{"fileName":"test.mp4","sha256":"abc","contentLength":16,"fileUrl":""}],"scene":"indoor"}'
 
 # 2. 启动任务
-curl -X POST http://localhost:8000/tasks/550e8400-e29b-41d4-a716-446655440000/start \
-  -H "X-API-Key: 3dgs-dev-2026"
+curl -X POST http://localhost:8000/tasks/{task_id}/start \
+  -H "Authorization: 3dgs-dev-2026" \
+  -H "projectId: proj-01"
 
 # 3. 查询任务
-curl http://localhost:8000/tasks/550e8400-e29b-41d4-a716-446655440000 \
-  -H "X-API-Key: 3dgs-dev-2026"
+curl http://localhost:8000/tasks/{task_id} \
+  -H "Authorization: 3dgs-dev-2026" \
+  -H "projectId: proj-01"
 ```
 
 ---
@@ -179,7 +179,7 @@ python scripts/real_test.py
 
 | 状态 | 说明 |
 |------|------|
-| `queued` | 任务已创建，等待启动 |
+| `pending` | 任务已创建，等待启动 |
 | `processing` | 流水线正在执行 |
 | `completed` | 全部阶段执行成功 |
 | `failed` | 流水线执行出错 |
@@ -206,7 +206,7 @@ python scripts/real_test.py
 | 任务队列 | Celery + Redis | Celery + 内存 broker |
 | 数据库 | PostgreSQL + SQLAlchemy | SQLite + SQLAlchemy |
 | 对象存储 | MinIO | 本地文件系统 |
-| 鉴权 | API Key (X-API-Key) | API Key (X-API-Key) |
+| 鉴权 | Authorization Header（app_auth + project_auth） | Authorization Header（app_auth + project_auth） |
 | 前端 | 原生 HTML/JS | 原生 HTML/JS |
 | 容器化 | Docker Compose | 无需 Docker |
 | 测试 | pytest + httpx | pytest + httpx |

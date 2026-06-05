@@ -3,8 +3,8 @@ from sqlalchemy import create_engine, Column, String, DateTime, Integer, Text, F
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
-import uuid
 import enum
+from uuid import uuid4
 
 from backend.core.config import settings
 
@@ -19,14 +19,14 @@ Base = declarative_base()
 
 
 class TaskStatus(str, enum.Enum):
-    QUEUED = "queued"
+    PENDING = "pending"
     PROCESSING = "processing"
     COMPLETED = "completed"
     FAILED = "failed"
 
 
 class TaskStage(str, enum.Enum):
-    PENDING = "pending"
+    INITIALIZING = "initializing"
     EXTRACTING = "extracting"
     COLMAP = "colmap"
     TRAINING = "training"
@@ -35,13 +35,20 @@ class TaskStage(str, enum.Enum):
     FAILED = "failed"
 
 
+def _generate_task_id():
+    ts = int(datetime.utcnow().timestamp() * 1000)
+    return f"{ts}{uuid4().hex[:6]}"
+
+
 class Task(Base):
     __tablename__ = "tasks"
 
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    external_code = Column(String(255), nullable=False, index=True)
-    status = Column(String(50), default=TaskStatus.QUEUED.value)
-    current_stage = Column(String(50), default=TaskStage.PENDING.value)
+    id = Column(String(32), primary_key=True, default=_generate_task_id)
+    project_id = Column(String(20), nullable=False, index=True)
+    external_code = Column(String(256), nullable=False, index=True)
+    scene = Column(String(32), nullable=False)
+    status = Column(String(50), default=TaskStatus.PENDING.value)
+    current_stage = Column(String(50), default=TaskStage.INITIALIZING.value)
     progress = Column(Integer, default=0)
     remaining_time = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -56,11 +63,11 @@ class TaskFile(Base):
     __tablename__ = "task_files"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    task_id = Column(String(36), ForeignKey("tasks.id"), nullable=False)
-    original_filename = Column(String(512), nullable=False)
+    task_id = Column(String(32), ForeignKey("tasks.id"), nullable=False)
+    fileName = Column(String(256), nullable=False)
     sha256 = Column(String(64), nullable=False)
-    file_size = Column(Integer, nullable=False)
-    file_path = Column(String(1024), nullable=False)
+    contentLength = Column(Integer, nullable=False)
+    fileUrl = Column(String(1024), nullable=False)
 
     task = relationship("Task", back_populates="files")
 

@@ -1,45 +1,49 @@
 """Pydantic schemas for task API."""
-from pydantic import BaseModel, Field
-from datetime import datetime
 from typing import Optional
-from uuid import UUID
+from pydantic import BaseModel, Field
+
+
+class ConnectRet(BaseModel):
+    code: int = 0
+    msg: str = "success"
 
 
 class FileInfo(BaseModel):
-    """Schema for file metadata in task."""
-    original_filename: str
-    sha256: str
-    file_size: int
-    file_path: str
+    fileName: str = Field(..., max_length=256)
+    sha256: Optional[str] = Field(None, max_length=64)
+    contentLength: Optional[int] = None
+    fileUrl: str
 
 
-class TaskCreateResponse(BaseModel):
-    """Schema for create task response."""
-    task_id: UUID
-    files: list[FileInfo]
+class CreateTaskReq(BaseModel):
+    externalCode: str = Field(..., max_length=256)
+    fileInfos: list[FileInfo] = Field(..., min_length=1, max_length=3)
+    scene: str = Field(..., max_length=32)
 
 
-class TaskStartResponse(BaseModel):
-    """Schema for start task response."""
-    code: int = 0
-    msg: str = "success"
-    remaining_time: int
+class CreateTaskRsp(BaseModel):
+    ret: ConnectRet = ConnectRet()
+    taskId: str
+    fileInfos: list[FileInfo]
 
 
-class TaskQueryResponse(BaseModel):
-    """Schema for query task response."""
-    code: int = 0
+class StartTaskRsp(BaseModel):
+    ret: ConnectRet = ConnectRet()
+    remainingTime: int
+
+
+class GetTaskRsp(BaseModel):
+    ret: ConnectRet = ConnectRet()
     status: str
-    current_stage: str
+    currentStage: str
     progress: int
-    remaining_time: int
-    output_files: list[FileInfo] = []
+    remainingTime: int
+    downloadInfos: list[FileInfo] = []
 
 
 class TaskStatusEvent(BaseModel):
-    """Schema for SSE status events."""
     status: str
     stage: str
     progress: int
-    remaining_time: int
-    updated_at: str
+    remainingTime: int
+    updatedAt: str

@@ -41,9 +41,9 @@
 
 ### 核心流程
 
-1. **创建任务**（POST /tasks）—— 上传文件 + 注册元数据 → 状态 `queued`
+1. **创建任务**（POST /tasks）—— 提交 JSON body + 注册元数据 → 状态 `pending`
 2. **启动任务**（POST /tasks/{id}/start）—— 提交 Celery 链 → 状态 `processing`
-3. **轮询/SSE 等待** → 内部阶段：pending → extracting → colmap → training → compressing
+3. **轮询/SSE 等待** → 内部阶段：initializing → extracting → colmap → training → compressing
 4. **完成** → 状态 `completed`，可下载输出文件（SPZ/SOG）
 
 ---
@@ -56,7 +56,7 @@
 | 任务队列 | Celery 5.4 + Redis 5.0 | Celery + 内存 broker（memory://） |
 | 数据库 | PostgreSQL 15 + SQLAlchemy 2.0 | SQLite + SQLAlchemy 2.0 |
 | 对象存储 | MinIO 7.2 | 本地文件系统（LocalStorageClient） |
-| 鉴权 | API Key（X-API-Key Header） | 同上（可留空关闭） |
+| 鉴权 | Authorization Header（app_auth + project_auth） | 同上（可留空关闭） |
 | 前端 | 原生 HTML / CSS / JS（无框架） | 同上 |
 | 容器化 | Docker Compose（六服务编排） | 无需 Docker |
 | 测试 | pytest 9.0 + httpx 0.27 + pytest-cov | 同上 |
@@ -74,16 +74,13 @@
 │   │   ├── deps.py             # 依赖注入（DB session）
 │   │   ├── routers/
 │   │   │   ├── tasks.py        # POST /tasks, POST /tasks/{id}/start, GET /tasks/{id}
-│   │   │   ├── sse.py          # GET /tasks/{id}/events（SSE 实时进度）
-│   │   │   ├── upload.py       # [废弃] 旧上传接口，返回 410
-│   │   │   └── projects.py     # [废弃] 旧项目查询，返回 410
+│   │   │   └── sse.py          # GET /tasks/{id}/events（SSE 实时进度）
 │   │   └── schemas/
-│   │       ├── task.py         # TaskCreate/Start/QueryResponse 等 Pydantic 模型
-│   │       └── project.py      # [废弃] 旧版 Project 模型
+│   │       └── task.py         # CreateTask/Start/GetRsp 等 Pydantic 模型
 │   ├── core/                   # 基础设施层
 │   │   ├── config.py           # Pydantic Settings 配置（.env 驱动）
 │   │   ├── database.py         # SQLAlchemy 引擎、Session、Task + TaskFile ORM 模型
-│   │   ├── auth.py             # API Key 鉴权（X-API-Key）
+│   │   ├── auth.py             # Authorization 鉴权（app_auth + project_auth）
 │   │   ├── storage.py          # 存储工厂（MinIO / 本地 自动切换）
 │   │   ├── local_storage.py    # 本地文件系统存储实现
 │   │   └── minio_storage.py    # MinIO 对象存储实现
@@ -191,41 +188,48 @@ uvicorn backend.api.main:app --reload --port 8000
 
 ## API 端点与鉴权
 
-所有接口（除静态文件外）需要 `X-API-Key` Header。
+所有接口（除静态文件外）需要 `Authorization` Header，分为两种鉴权策略：
+
+| 策略 | 适用接口 | 说明 |
+|------|---------|------|
+| `app_auth` | POST /tasks | 应用级鉴权，创建任务 |
+| `project_auth` | POST /tasks/{id}/start, GET /tasks/{id}, SSE | 项目级鉴权 |
+
+所有接口还需 `projectId` Header（最大 20 字符）。
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/tasks` | 创建任务。Form 参数: `external_code`, `files_meta`(JSON 数组), `files`(UploadFile 列表) |
-| POST | `/tasks/{id}/start` | 启动任务。status: queued → processing，提交四阶段 Celery 链 |
-| GET | `/tasks/{id}` | 查询任务状态。返回 `{code, status, current_stage, progress, remaining_time, output_files}` |
-| GET | `/tasks/{id}/events` | SSE 实时进度推送。每 2s 推送，status/completed/failed 时自动断开 |
-
-旧的 `/upload`、`/projects` 已废弃，返回 410。
+| POST | `/tasks` | 创建任务。Header: `projectId`, `Authorization`。Body: JSON（`externalCode` + `fileInfos` 数组 + `scene` 枚举） |
+| POST | `/tasks/{id}/start` | 启动任务。status: pending → processing，提交四阶段 Celery 链 |
+| GET | `/tasks/{id}` | 查询任务状态。返回 `{ret:{code,msg}, status, currentStage, progress, remainingTime, downloadInfos}` |
+| GET | `/tasks/{id}/events` | SSE 实时进度。鉴权支持 Query 参数（EventSource 无法发自定义 Header） |
 
 ### REST 请求示例
 
 ```bash
 # 1. 创建任务
 curl -X POST http://localhost:8000/tasks \
-  -H "X-API-Key: 3dgs-dev-2026" \
-  -F "external_code=EXT-001" \
-  -F 'files_meta=[{"original_filename":"scene.mp4","sha256":"abc123","file_size":1048576}]' \
-  -F "files=@scene.mp4"
+  -H "Authorization: 3dgs-dev-2026" \
+  -H "projectId: proj-01" \
+  -H "Content-Type: application/json" \
+  -d '{"externalCode":"EXT-001","fileInfos":[{"fileName":"test.mp4","sha256":"abc","contentLength":16,"fileUrl":""}],"scene":"indoor"}'
 
 # 2. 启动任务
 curl -X POST http://localhost:8000/tasks/{task_id}/start \
-  -H "X-API-Key: 3dgs-dev-2026"
+  -H "Authorization: 3dgs-dev-2026" \
+  -H "projectId: proj-01"
 
 # 3. 查询任务
 curl http://localhost:8000/tasks/{task_id} \
-  -H "X-API-Key: 3dgs-dev-2026"
+  -H "Authorization: 3dgs-dev-2026" \
+  -H "projectId: proj-01"
 ```
 
 ### 鉴权逻辑
 
 `backend/core/auth.py`：
 - `.env` 中 `API_KEY` 留空 → 关闭鉴权（开放访问）
-- `API_KEY` 设置值 → 所有请求需带 `X-API-Key: <key>`
+- `API_KEY` 设置值 → 所有请求需带 `Authorization: <key>`
 - 默认开发 Key：`3dgs-dev-2026`
 
 ---
@@ -238,10 +242,12 @@ curl http://localhost:8000/tasks/{task_id} \
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `id` | String(36) UUID | 主键，自动生成 |
-| `external_code` | String(255) | 外部系统唯一标识码 |
-| `status` | String(50) | 外部状态：queued / processing / completed / failed |
-| `current_stage` | String(50) | 内部阶段：pending / extracting / colmap / training / compressing |
+| `id` | String(32) | 主键，纯数字（时间戳+随机后缀），如 `1780614692192a3f4c` |
+| `project_id` | String(20) | 项目 ID（Header 传入） |
+| `external_code` | String(256) | 外部系统唯一标识码 |
+| `scene` | String(32) | 场景类型：commodity / indoor / outdoor |
+| `status` | String(50) | 外部状态：pending / processing / completed / failed |
+| `current_stage` | String(50) | 内部阶段：initializing / extracting / colmap / training / compressing |
 | `progress` | Integer | 进度百分比 0-100 |
 | `remaining_time` | Integer | 预计剩余秒数（Stub 固定值） |
 | `created_at` / `updated_at` / `completed_at` | DateTime | 时间戳 |
@@ -252,11 +258,11 @@ curl http://localhost:8000/tasks/{task_id} \
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `id` | Integer | 自增主键 |
-| `task_id` | String(36) FK | 关联 Task |
-| `original_filename` | String(512) | 原始文件名（含后缀） |
+| `task_id` | String(32) FK | 关联 Task |
+| `fileName` | String(256) | 原始文件名（含后缀） |
 | `sha256` | String(64) | 文件 SHA256 哈希 |
-| `file_size` | Integer | 文件大小（字节） |
-| `file_path` | String(1024) | 文件存储路径 |
+| `contentLength` | Integer | 文件大小（字节） |
+| `fileUrl` | String(1024) | 文件存储路径（本地路径，后续改为 OBS） |
 
 ---
 
@@ -277,7 +283,7 @@ pytest --cov=backend --cov-report=term-missing
 - 强制使用 SQLite 文件数据库（`sqlite:///./test.db`）
 - Celery 使用内存 broker（`memory://`）
 - API Key 固定为 `test-key`
-- `TestClient` 自动携带 `X-API-Key` 请求头
+- `TestClient` 自动携带 `Authorization` 请求头
 - 数据库在 session 结束时自动清理（`Base.metadata.drop_all`）
 - `pytest.ini` 中 `testpaths = tests` 且 `norecursedirs` 排除 `scripts/`，防止集成脚本被扫描
 
@@ -334,7 +340,7 @@ python scripts/integration_test.py
 
 | 状态值 | 含义 | 说明 |
 |--------|------|------|
-| `queued` | 排队中 | 任务已创建，等待启动 |
+| `pending` | 排队中 | 任务已创建，等待启动 |
 | `processing` | 处理中 | 流水线正在执行 |
 | `completed` | 完成 | 全部阶段执行成功 |
 | `failed` | 失败 | 流水线执行出错 |
@@ -343,7 +349,7 @@ python scripts/integration_test.py
 
 | 阶段值 | 含义 | 进度范围 | Stub 耗时 |
 |--------|------|---------|----------|
-| `pending` | 等待中 | 0% | - |
+| `initializing` | 等待中 | 0% | - |
 | `extracting` | 帧提取中 | 10% - 25% | ~2s |
 | `colmap` | COLMAP SfM 中 | 30% - 45% | ~3s |
 | `training` | 3DGS 训练中 | 50% - 80% | ~7s |
@@ -367,10 +373,10 @@ chain(
 ## 前端架构
 
 - **无构建工具**：纯 HTML/CSS/JS，直接由 FastAPI `StaticFiles` 挂载服务
-- **API Key 硬编码**：`frontend/js/app.js` 和 `frontend/js/viewer.js` 中硬编码默认 Key `3dgs-dev-2026`，与 `.env` 默认值保持一致
-- **实时进度**：使用 SSE（`EventSource`）连接 `/tasks/{id}/events`，每 2 秒推送一次状态
-- **上传流程**：`index.html` 表单 → `app.js` 计算文件 SHA256 → POST `/tasks` 创建任务 → 点击"启动任务" → POST `/tasks/{id}/start`
-- **查看器**：`viewer.html` 通过 URL 参数 `?id=` 获取 task_id，SSE 连接实时更新进度条
+- **API Key 硬编码**：`frontend/js/app.js` 和 `frontend/js/viewer.js` 中硬编码默认 Key `3dgs-dev-2026`，通过 `Authorization` Header 传递
+- **实时进度**：使用 SSE（`EventSource`）连接 `/tasks/{id}/events`，鉴权通过 Query 参数传递（EventSource 不支持自定义 Header），每 2 秒推送一次状态
+- **上传流程**：`index.html` 表单（含 projectId、externalCode、scene、文件） → `app.js` 构造 JSON body → POST `/tasks` 创建任务 → 点击"启动任务" → POST `/tasks/{id}/start`
+- **查看器**：`viewer.html` 通过 URL 参数 `?id=&projectId=` 获取 task_id 和项目 ID，SSE 连接实时更新进度条
 
 ---
 

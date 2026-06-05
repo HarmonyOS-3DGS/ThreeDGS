@@ -49,7 +49,7 @@ def setup_db():
 
 @pytest.fixture
 def client():
-    return TestClient(app, headers={"X-API-Key": "test-key"})
+    return TestClient(app, headers={"Authorization": "test-key"})
 
 
 @pytest.fixture
