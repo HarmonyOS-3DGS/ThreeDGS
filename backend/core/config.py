@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     # Auth
     api_key: str = Field(default="")
 
+    # Task lifecycle
+    task_pending_ttl_hours: int = Field(default=24)
+    task_completed_ttl_days: int = Field(default=7)
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

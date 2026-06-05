@@ -12,6 +12,7 @@ app = Celery(
         "backend.worker.tasks.train_gs",
         "backend.worker.tasks.compress",
         "backend.worker.tasks.pipeline",
+        "backend.worker.tasks.cleanup",
     ],
 )
 
@@ -24,4 +25,14 @@ app.conf.update(
     task_track_started=True,
     task_time_limit=3600,
     worker_prefetch_multiplier=1,
+    beat_schedule={
+        "cleanup-pending-tasks": {
+            "task": "backend.worker.tasks.cleanup.cleanup_pending_tasks",
+            "schedule": 1800.0,  # 30 minutes
+        },
+        "cleanup-completed-tasks": {
+            "task": "backend.worker.tasks.cleanup.cleanup_completed_tasks",
+            "schedule": 3600.0,  # 1 hour
+        },
+    },
 )

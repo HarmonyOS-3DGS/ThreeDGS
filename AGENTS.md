@@ -86,12 +86,13 @@
 │   │   └── minio_storage.py    # MinIO 对象存储实现
 │   └── worker/                 # Celery Worker
 │       ├── celery_app.py       # Celery 应用配置
-│       ├── tasks/              # 四阶段流水线任务
-│       │   ├── pipeline.py     # 任务链编排（chain）
-│       │   ├── extract_frames.py
-│       │   ├── colmap_sfm.py
-│       │   ├── train_gs.py
-│       │   └── compress.py
+│   ├── tasks/              # 四阶段流水线 + 定时清理
+│   │   ├── pipeline.py     # 任务链编排（chain）
+│   │   ├── extract_frames.py
+│   │   ├── colmap_sfm.py
+│   │   ├── train_gs.py
+│   │   ├── compress.py
+│   │   └── cleanup.py      # 过期任务清理（Celery Beat）
 │       └── models/             # Stub 模型层
 │           ├── preprocessor.py # FFmpeg / COLMAP 空壳
 │           ├── trainer.py      # 3DGS 训练空壳
@@ -104,7 +105,7 @@
 │   └── js/
 │       ├── app.js              # 上传表单 + 启动任务
 │       └── viewer.js           # SSE 连接 + 查看器集成
-├── tests/                      # pytest 测试套件（23 个测试）
+├── tests/                      # pytest 测试套件（29 个测试）
 │   ├── conftest.py             # 全局 fixture（SQLite 文件模式、TestClient）
 │   ├── test_api/               # API 端点测试
 │   ├── test_core/              # 核心模块测试（storage mock）
@@ -316,6 +317,8 @@ python scripts/integration_test.py
 | `USE_LOCAL_STORAGE` | `false` | 是否强制使用本地文件存储 |
 | `LOCAL_STORAGE_DIR` | `./local_storage` | 本地存储根目录 |
 | `API_KEY` | `""` | 鉴权 Key（留空关闭） |
+| `TASK_PENDING_TTL_HOURS` | `24` | 过期 pending 任务清理阈值（小时） |
+| `TASK_COMPLETED_TTL_DAYS` | `7` | 过期 completed 任务清理阈值（天） |
 
 ---
 
