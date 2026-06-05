@@ -2,17 +2,19 @@ openapi: "3.0.3"
 info:
   title: 3DGS Platform API
   description: |
-    3D Gaussian Splatting（3DGS）端到端训练平台 API。
+    3D Gaussian Splatting（3DGS）端到端训练平台 API v3。
 
     核心流程：
-      1. 创建任务（POST /tasks）—— 状态 pending
-      2. 启动任务（POST /tasks/{task_id}/start）—— status: pending → processing
-      3. 查询任务（GET /tasks/{task_id}）—— 获取状态、进度、下载信息
+      1. 创建任务（POST /tasks）→ 状态 pending
+      2. 启动任务（POST /tasks/{taskId}/start）→ status: pending → processing
+      3. 轮询/SSE 等待（GET /tasks/{taskId} / GET /tasks/{taskId}/events）
 
     内部流水线阶段（外部只感知 pending / processing / completed / failed）：
       initializing → extracting → colmap → training → compressing → completed
 
-    支持 SSE 实时进度推送（GET /tasks/{task_id}/events）。
+    接口鉴权分为两种策略：
+      - app_auth：创建任务
+      - project_auth：启动、查询、列表、下载、SSE
   version: "3.0.0"
 
 servers:
@@ -21,10 +23,41 @@ servers:
 
 paths:
   /tasks:
+    get:
+      summary: 列出任务
+      description: 列出指定项目的所有任务，按创建时间倒序
+      tags:
+        - taskManagement
+      operationId: listTasks
+      security:
+        - project_auth: []
+      parameters:
+        - name: projectId
+          in: header
+          required: true
+          description: 项目 ID
+          schema:
+            type: string
+            maxLength: 20
+            example: "proj-001"
+      responses:
+        "200":
+          description: 任务列表
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskListResponse"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+
     post:
       summary: 创建3DGS任务
       description: |
-        创建训练任务，状态为 pending，长时间不启动任务会被清理。
+        创建训练任务，状态为 pending，长时间不启动会被清理。
+
+        支持两种请求格式：
+        1. JSON body: Content-Type: application/json
+        2. multipart: Content-Type: multipart/form-data
       tags:
         - taskManagement
       operationId: createTask
@@ -45,6 +78,30 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/CreateTaskReq"
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - externalCode
+                - filesMeta
+                - scene
+                - files
+              properties:
+                externalCode:
+                  type: string
+                  maxLength: 256
+                  description: 外部系统唯一 ID
+                scene:
+                  type: string
+                  enum: [commodity, indoor, outdoor]
+                filesMeta:
+                  type: string
+                  description: JSON 数组，每项为 FileInfo
+                files:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
       responses:
         "200":
           description: 任务创建成功
@@ -57,11 +114,10 @@ paths:
         "401":
           $ref: "#/components/responses/UnauthorizedError"
 
-  /tasks/{task_id}/start:
+  /tasks/{taskId}/start:
     post:
       summary: 启动任务
-      description: |
-        启动一个已创建的任务（status: pending → processing），提交四阶段 Celery 训练流水线。
+      description: 启动任务（pending → processing），提交四阶段 Celery 流水线
       tags:
         - taskManagement
       operationId: startTask
@@ -71,22 +127,20 @@ paths:
         - name: projectId
           in: header
           required: true
-          description: 项目 ID
           schema:
             type: string
             maxLength: 20
-            example: "proj-001"
-        - name: task_id
+        - name: taskId
           in: path
           required: true
-          description: 任务 ID（纯数字）
+          description: 任务 ID（纯数字字符串）
           schema:
             type: string
             maxLength: 32
-            example: "20260604001"
+            example: "1780612345678"
       responses:
         "200":
-          description: 任务启动成功
+          description: 启动成功
           content:
             application/json:
               schema:
@@ -96,29 +150,16 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorDetail"
-              example:
-                ret:
-                  code: 400
-                  msg: "Task status is processing, expected pending"
+                $ref: "#/components/schemas/ErrorRsp"
         "401":
           $ref: "#/components/responses/UnauthorizedError"
         "404":
           description: 任务不存在
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorDetail"
-              example:
-                ret:
-                  code: 404
-                  msg: "Task not found"
 
-  /tasks/{task_id}:
+  /tasks/{taskId}:
     get:
-      summary: 查询任务状态
-      description: |
-        查询3DGS任务执行情况。长时间不获取重建后的模型文件，会被清理。
+      summary: 查询任务
+      description: 查询任务状态、进度、剩余时间和输出文件下载信息
       tags:
         - taskManagement
       operationId: getTask
@@ -128,22 +169,18 @@ paths:
         - name: projectId
           in: header
           required: true
-          description: 项目 ID
           schema:
             type: string
             maxLength: 20
-            example: "proj-001"
-        - name: task_id
+        - name: taskId
           in: path
           required: true
-          description: 任务 ID（纯数字）
           schema:
             type: string
             maxLength: 32
-            example: "20260604001"
       responses:
         "200":
-          description: 任务状态信息
+          description: 任务信息
           content:
             application/json:
               schema:
@@ -152,47 +189,78 @@ paths:
           $ref: "#/components/responses/UnauthorizedError"
         "404":
           description: 任务不存在
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorDetail"
-              example:
-                ret:
-                  code: 404
-                  msg: "Task not found"
 
-  /tasks/{task_id}/events:
+  /tasks/{taskId}/download:
     get:
-      summary: SSE 实时进度推送
-      description: |
-        通过 Server-Sent Events（SSE）实时推送训练进度。
-        每 2 秒推送一次当前状态，任务完成或失败后自动终止。
-
-        事件类型：
-        - `status`：进度更新事件
-        - `done`：流水线结束事件（final_status 为 completed 或 failed）
-        - `error`：任务不存在错误
+      summary: 下载输出文件
+      description: 下载任务的输出文件（SPZ/SOG）
       tags:
-        - sse
+        - taskManagement
+      operationId: downloadFile
       security:
         - project_auth: []
       parameters:
         - name: projectId
           in: header
           required: true
-          description: 项目 ID
           schema:
             type: string
             maxLength: 20
-            example: "proj-001"
-        - name: task_id
+        - name: taskId
           in: path
           required: true
-          description: 任务 ID（纯数字）
           schema:
             type: string
             maxLength: 32
-            example: "20260604001"
+        - name: file
+          in: query
+          required: true
+          description: 文件名
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 文件内容
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "404":
+          description: 任务或文件不存在
+
+  /tasks/{taskId}/events:
+    get:
+      summary: SSE 实时进度
+      description: |
+        Server-Sent Events 实时推送训练进度，每 2 秒推送。
+        鉴权通过 Query 参数传递（EventSource 不支持自定义 Header）。
+
+        事件类型：
+        - status: 进度更新 {status, stage, progress, remainingTime, updatedAt}
+        - done: 完成/失败 {finalStatus}
+        - error: 任务不存在 {ret: {code, msg}}
+      tags:
+        - sse
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 32
+        - name: projectId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: Authorization
+          in: query
+          required: true
+          schema:
+            type: string
       responses:
         "200":
           description: SSE 事件流
@@ -202,14 +270,10 @@ paths:
                 type: object
               example: |
                 event: status
-                data: {"status":"processing","stage":"training","progress":55,"remainingTime":8,"updatedAt":"2026-06-04T12:00:00"}
+                data: {"status":"processing","stage":"training","progress":55,"remainingTime":8,"updatedAt":"2026-06-05T12:00:00"}
 
                 event: done
                 data: {"finalStatus":"completed"}
-        "401":
-          $ref: "#/components/responses/UnauthorizedError"
-        "404":
-          description: 任务不存在
 
 components:
   securitySchemes:
@@ -217,175 +281,153 @@ components:
       type: apiKey
       in: header
       name: Authorization
-      description: |
-        应用级鉴权（用于创建任务）。
-        鉴权策略: serviceAccountCredentials
+      description: 应用级鉴权，创建任务
     project_auth:
       type: apiKey
       in: header
       name: Authorization
-      description: |
-        项目级鉴权（用于启动、查询、SSE）。
-        鉴权策略: serviceAccount，acceptValue: com.xxx.yyy.permission，credentialType: project
+      description: 项目级鉴权，启动/查询/列表/下载/SSE
 
   schemas:
-    FileInfo:
-      type: object
-      description: 文件元数据信息（请求和响应统一模型）
-      required:
-        - fileName
-        - fileUrl
-      properties:
-        fileName:
-          type: string
-          maxLength: 256
-          description: 原始文件名（含后缀）
-          example: "scene.mp4"
-        sha256:
-          type: string
-          maxLength: 64
-          description: 文件内容的 SHA256 哈希值
-          example: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-        contentLength:
-          type: integer
-          format: int64
-          description: 文件大小（字节）
-          example: 1048576
-        fileUrl:
-          type: string
-          description: 本地文件路径（后续改为 OBS 桶对象 ID）
-          example: "./local_storage/uploads/20260604001/scene.mp4"
-
     ConnectRet:
       type: object
-      description: 通用返回码
-      required:
-        - code
-        - msg
+      required: [code, msg]
       properties:
         code:
           type: integer
-          description: 返回码（0 表示成功）
+          description: 返回码，0 表示成功
           example: 0
         msg:
           type: string
           description: 返回描述
           example: "success"
 
+    FileInfo:
+      type: object
+      required: [fileName, fileUrl]
+      properties:
+        fileName:
+          type: string
+          maxLength: 256
+          description: 文件名（含后缀）
+          example: "scene.mp4"
+        sha256:
+          type: string
+          maxLength: 64
+          description: SHA256 哈希
+        contentLength:
+          type: integer
+          format: int64
+          description: 文件大小（字节）
+        fileUrl:
+          type: string
+          description: 文件路径
+
     CreateTaskReq:
       type: object
-      description: 创建任务请求体
-      required:
-        - externalCode
-        - fileInfos
-        - scene
+      required: [externalCode, fileInfos, scene]
       properties:
         externalCode:
           type: string
           maxLength: 256
-          description: 外部系统唯一 ID（只记录，不校验）
-          example: "EXT-001-20260604"
+          description: 外部系统唯一 ID
         fileInfos:
           type: array
           minItems: 1
           maxItems: 3
-          description: 上传文件信息列表
           items:
             $ref: "#/components/schemas/FileInfo"
         scene:
           type: string
-          maxLength: 32
+          enum: [commodity, indoor, outdoor]
           description: 场景类型
-          enum:
-            - commodity
-            - indoor
-            - outdoor
-          example: "indoor"
 
     CreateTaskRsp:
       type: object
-      description: 创建任务响应
-      required:
-        - ret
-        - taskId
-        - fileInfos
+      required: [ret, taskId, fileInfos]
       properties:
         ret:
           $ref: "#/components/schemas/ConnectRet"
         taskId:
           type: string
           description: 任务 ID（纯数字）
-          example: "20260604001"
+          example: "1780612345678"
         fileInfos:
           type: array
-          description: 任务关联文件的上传信息（与请求一一对应）
           items:
             $ref: "#/components/schemas/FileInfo"
 
     StartTaskRsp:
       type: object
-      description: 启动任务响应
-      required:
-        - ret
-        - remainingTime
+      required: [ret, remainingTime]
       properties:
         ret:
           $ref: "#/components/schemas/ConnectRet"
         remainingTime:
           type: integer
           format: int64
-          description: 预计剩余时间（秒，Stub 固定值 15）
+          description: 预计剩余时间（秒）
           example: 15
 
     GetTaskRsp:
       type: object
-      description: 查询任务响应
-      required:
-        - ret
-        - status
-        - currentStage
-        - progress
-        - remainingTime
-        - downloadInfos
+      required: [ret, taskId, status, currentStage, progress, remainingTime, scene, downloadInfos]
       properties:
         ret:
           $ref: "#/components/schemas/ConnectRet"
+        taskId:
+          type: string
+          example: "1780612345678"
         status:
           type: string
-          description: 任务状态
-          enum:
-            - pending
-            - processing
-            - completed
-            - failed
+          enum: [pending, processing, completed, failed]
           example: "processing"
         currentStage:
           type: string
-          description: 内部流水线阶段（initializing / extracting / colmap / training / compressing / completed）
+          description: 内部阶段
+          enum: [initializing, extracting, colmap, training, compressing, completed, failed]
           example: "training"
         progress:
           type: integer
-          description: 进度百分比（0-100）
           minimum: 0
           maximum: 100
           example: 55
         remainingTime:
           type: integer
           format: int64
-          description: 预计剩余时间（秒，仅在 processing 状态时有意义）
           example: 8
+        scene:
+          type: string
+          example: "indoor"
         downloadInfos:
           type: array
-          description: 可下载的输出文件列表（任务完成后非空）
+          description: 可下载文件列表（完成后非空）
           items:
             $ref: "#/components/schemas/FileInfo"
 
-    ErrorDetail:
+    TaskListResponse:
       type: object
-      description: 错误响应
+      required: [ret, items, total]
       properties:
         ret:
           $ref: "#/components/schemas/ConnectRet"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/GetTaskRsp"
+        total:
+          type: integer
+          example: 5
+
+    ErrorRsp:
+      type: object
+      properties:
+        ret:
+          $ref: "#/components/schemas/ConnectRet"
+      example:
+        ret:
+          code: 400
+          msg: "Task status is processing, expected pending"
 
   responses:
     BadRequest:
@@ -393,26 +435,14 @@ components:
       content:
         application/json:
           schema:
-            $ref: "#/components/schemas/ErrorDetail"
-          example:
-            ret:
-              code: 400
-              msg: "请求参数不合法"
+            $ref: "#/components/schemas/ErrorRsp"
     UnauthorizedError:
-      description: 鉴权失败（Authorization 缺失或无效）
+      description: 鉴权失败
       content:
         application/json:
           schema:
-            $ref: "#/components/schemas/ErrorDetail"
+            $ref: "#/components/schemas/ErrorRsp"
           example:
             ret:
               code: 401
               msg: "Invalid or missing Authorization"
-
-x-tagGroups:
-  - name: 任务管理
-    tags:
-      - taskManagement
-  - name: 实时推送
-    tags:
-      - sse

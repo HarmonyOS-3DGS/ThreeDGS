@@ -7,6 +7,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from backend.core.database import Task
 from backend.api.deps import get_database
+from backend.core.auth import _verify_auth_key
 from backend.core.config import settings
 
 router = APIRouter(prefix="/tasks", tags=["sse"])
@@ -18,13 +19,9 @@ def _verify_sse_auth(
     auth_h: str | None = Header(None, alias="Authorization"),
     auth_q: str | None = Query(None, alias="Authorization"),
 ):
-    pid = projectId_h or projectId_q
     token = auth_h or auth_q
-    if not token:
-        raise HTTPException(status_code=401, detail={"ret": {"code": 401, "msg": "Missing Authorization"}})
-    expected = getattr(settings, "api_key", None)
-    if expected and token != expected:
-        raise HTTPException(status_code=401, detail={"ret": {"code": 401, "msg": "Invalid Authorization"}})
+    _verify_auth_key(token)
+    pid = projectId_h or projectId_q
     if not pid:
         raise HTTPException(status_code=422, detail={"ret": {"code": 422, "msg": "Missing projectId"}})
     return pid
@@ -32,6 +29,7 @@ def _verify_sse_auth(
 
 async def task_event_generator(task_id: str, project_id: str, db: Session):
     while True:
+        db.expire_all()  # prevent stale reads from Celery updates
         try:
             task = db.query(Task).filter(
                 Task.id == task_id, Task.project_id == project_id
@@ -42,7 +40,7 @@ async def task_event_generator(task_id: str, project_id: str, db: Session):
             ).first()
 
         if not task:
-            yield {"event": "error", "data": json.dumps({"detail": "Task not found"})}
+            yield {"event": "error", "data": json.dumps({"ret": {"code": 404, "msg": "Task not found"}})}
             break
 
         data = {

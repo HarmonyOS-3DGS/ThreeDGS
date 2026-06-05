@@ -6,8 +6,7 @@ from datetime import datetime, timedelta
 from backend.worker.celery_app import app
 from backend.core.database import SessionLocal, Task, TaskFile, TaskStatus
 from backend.core.config import settings
-
-UPLOAD_DIR = os.path.join(settings.local_storage_dir, "uploads")
+from backend.worker.tasks.shared import TASK_OUTPUT_DIR
 
 
 @app.task
@@ -24,8 +23,7 @@ def cleanup_pending_tasks():
         ).all()
 
         for task in expired:
-            task_dir = os.path.join(UPLOAD_DIR, str(task.id))
-            if os.path.exists(task_dir):
+            if os.path.exists(task_dir := os.path.join(TASK_OUTPUT_DIR, str(task.id))):
                 shutil.rmtree(task_dir, ignore_errors=True)
             db.query(TaskFile).filter(TaskFile.task_id == task.id).delete()
             db.delete(task)
@@ -50,8 +48,7 @@ def cleanup_completed_tasks():
         ).all()
 
         for task in expired:
-            task_dir = os.path.join(UPLOAD_DIR, str(task.id))
-            if os.path.exists(task_dir):
+            if os.path.exists(task_dir := os.path.join(TASK_OUTPUT_DIR, str(task.id))):
                 shutil.rmtree(task_dir, ignore_errors=True)
             db.query(TaskFile).filter(TaskFile.task_id == task.id).delete()
             db.delete(task)

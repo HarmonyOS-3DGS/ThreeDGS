@@ -88,6 +88,7 @@
 │       ├── celery_app.py       # Celery 应用配置
 │   ├── tasks/              # 四阶段流水线 + 定时清理
 │   │   ├── pipeline.py     # 任务链编排（chain）
+│   │   ├── shared.py       # 公共函数（update_task + 路径）
 │   │   ├── extract_frames.py
 │   │   ├── colmap_sfm.py
 │   │   ├── train_gs.py
@@ -200,10 +201,12 @@ uvicorn backend.api.main:app --reload --port 8000
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/tasks` | 创建任务。Header: `projectId`, `Authorization`。Body: JSON（`externalCode` + `fileInfos` 数组 + `scene` 枚举） |
-| POST | `/tasks/{id}/start` | 启动任务。status: pending → processing，提交四阶段 Celery 链 |
-| GET | `/tasks/{id}` | 查询任务状态。返回 `{ret:{code,msg}, status, currentStage, progress, remainingTime, downloadInfos}` |
-| GET | `/tasks/{id}/events` | SSE 实时进度。鉴权支持 Query 参数（EventSource 无法发自定义 Header） |
+| POST | `/tasks` | 创建任务。Header: `projectId`, `Authorization`。Body: JSON 或 multipart |
+| GET | `/tasks` | 列出项目所有任务 |
+| POST | `/tasks/{id}/start` | 启动任务。status: pending → processing |
+| GET | `/tasks/{id}` | 查询任务状态、进度、输出文件 |
+| GET | `/tasks/{id}/download?file=` | 下载输出文件 |
+| GET | `/tasks/{id}/events` | SSE 实时进度（鉴权支持 Query 参数） |
 
 ### REST 请求示例
 
@@ -331,7 +334,7 @@ python scripts/integration_test.py
 2. **导入顺序**：标准库 → 第三方库 → 项目内部模块（`backend.*`）
 3. **类型注解**：API Schema 使用 Pydantic 2.x 模型；函数参数尽量标注类型
 4. **数据库**：使用 SQLAlchemy 2.0 声明式 ORM；所有表通过 `init_db()` 自动创建（无 Alembic 迁移脚本，MVP 阶段简化处理）
-5. **任务更新模式**：每个 Celery 任务内部通过 `_update_task()` 辅助函数直接操作数据库，使用 `SessionLocal` 新建独立 session，并用 `try/finally` 确保关闭
+5. **任务更新模式**：每个 Celery 任务内部通过 `backend/worker/tasks/shared.py` 中的 `update_task()` 公共函数直接操作数据库，使用 `SessionLocal` 新建独立 session，并用 `try/finally` 确保关闭
 6. **异常处理**：Worker 任务中的进度更新（`self.update_state`）使用 `try/except` 静默忽略，避免测试环境无 Celery 上下文时崩溃
 7. **存储抽象**：`backend/core/storage.py` 提供懒加载代理，通过 `USE_LOCAL_STORAGE` 环境变量在 MinIO 和本地文件系统之间切换，保持 API 一致
 

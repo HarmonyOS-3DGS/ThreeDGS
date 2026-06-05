@@ -25,7 +25,7 @@ class TestCompress:
             with open(ply, "w") as f:
                 f.write("ply\n")
             with patch("backend.worker.tasks.compress.time.sleep"):
-                with patch("backend.worker.tasks.compress.SessionLocal") as MockSession:
+                with patch("backend.worker.tasks.shared.SessionLocal") as MockSession:
                     mock_db = MockSession.return_value
                     mock_task = mock_db.query.return_value.filter.return_value.first.return_value
                     compress_result.run({"task_id": "test-id", "model_path": ply})

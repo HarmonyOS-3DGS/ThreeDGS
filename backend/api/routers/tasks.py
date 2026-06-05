@@ -1,38 +1,140 @@
-"""Task management routes: create, start, query."""
+"""Task management routes: create, list, start, query."""
 import hashlib
+import json
 import os
+import shutil
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from backend.core.database import Task, TaskFile, TaskStatus, TaskStage
 from backend.api.schemas.task import (
-    CreateTaskReq, CreateTaskRsp, StartTaskRsp, GetTaskRsp,
-    FileInfo, ConnectRet,
+    CreateTaskReq, CreateTaskRsp, FileInfo, GetTaskRsp,
+    StartTaskRsp, TaskListResponse,
 )
 from backend.api.deps import get_database
 from backend.core.auth import verify_app_auth, verify_project_auth
-from backend.core.config import settings
+from backend.worker.tasks.shared import TASK_OUTPUT_DIR
 from backend.worker.tasks.pipeline import submit_training_pipeline
 
 router = APIRouter(prefix="/tasks", tags=["taskManagement"])
 
-UPLOAD_DIR = os.path.join(settings.local_storage_dir, "uploads")
+
+def _safe_filename(filename: str) -> str:
+    """Sanitize filename, prevent path traversal."""
+    return os.path.basename(filename)
+
+
+def _save_file(task_id: str, fi: FileInfo, content: bytes = b"") -> FileInfo:
+    safe_name = _safe_filename(fi.fileName)
+    task_dir = os.path.join(TASK_OUTPUT_DIR, str(task_id))
+    os.makedirs(task_dir, exist_ok=True)
+
+    file_url = os.path.join(task_dir, safe_name)
+    actual_sha256 = fi.sha256 or ""
+    content_length = fi.contentLength or 0
+
+    if not content and fi.fileUrl:
+        safe_url = os.path.join(task_dir, _safe_filename(os.path.basename(fi.fileUrl)))
+        if os.path.isfile(safe_url):
+            with open(safe_url, "rb") as f:
+                content = f.read()
+
+    if content:
+        actual_sha256 = hashlib.sha256(content).hexdigest()
+        content_length = len(content)
+        with open(file_url, "wb") as f:
+            f.write(content)
+
+    return FileInfo(
+        fileName=safe_name,
+        sha256=actual_sha256,
+        contentLength=content_length,
+        fileUrl=file_url,
+    )
+
+
+@router.get("", response_model=TaskListResponse)
+def list_tasks(
+    projectId: str = Header(..., max_length=20),
+    db: Session = Depends(get_database),
+    _auth: str = Depends(verify_project_auth),
+):
+    """列出指定项目的所有任务."""
+    tasks = (
+        db.query(Task)
+        .filter(Task.project_id == projectId)
+        .order_by(Task.created_at.desc())
+        .all()
+    )
+    items = [
+        GetTaskRsp(
+            taskId=t.id,
+            status=t.status,
+            currentStage=t.current_stage,
+            progress=t.progress,
+            remainingTime=t.remaining_time,
+            scene=t.scene,
+            downloadInfos=[],
+        )
+        for t in tasks
+    ]
+    return TaskListResponse(items=items, total=len(items))
 
 
 @router.post("", response_model=CreateTaskRsp)
-def create_task(
-    body: CreateTaskReq,
+async def create_task(
+    request: Request,
     projectId: str = Header(..., max_length=20),
     db: Session = Depends(get_database),
     _auth: str = Depends(verify_app_auth),
 ):
-    """创建3DGS任务，状态为 pending."""
+    """创建3DGS任务。支持 JSON body 或 multipart/form-data."""
+    content_type = request.headers.get("content-type", "")
+
+    file_contents: dict[str, bytes] = {}
+
+    if "application/json" in content_type:
+        data = await request.json()
+        try:
+            body = CreateTaskReq(**data)
+        except ValidationError as e:
+            raise HTTPException(status_code=422, detail={"ret": {"code": 422, "msg": str(e)}})
+        ec = body.externalCode
+        sc = body.scene
+        file_infos = body.fileInfos
+    elif "multipart/form-data" in content_type:
+        form = await request.form()
+        ec = form.get("externalCode") or ""
+        sc = form.get("scene") or ""
+        fm = form.get("filesMeta") or "[]"
+        if isinstance(fm, str):
+            file_infos = [FileInfo(**m) for m in json.loads(fm)]
+        else:
+            file_infos = [FileInfo(**m) for m in json.loads(str(fm))]
+        upload_files = form.getlist("files")
+        for f in upload_files:
+            if hasattr(f, "filename") and f.filename:
+                file_contents[f.filename] = await f.read()
+        for fi in file_infos:
+            content = file_contents.get(fi.fileName, b"")
+            if content:
+                fi.sha256 = hashlib.sha256(content).hexdigest()
+                fi.contentLength = len(content)
+    else:
+        raise HTTPException(status_code=400,
+            detail={"ret": {"code": 400, "msg": "Unsupported content-type, use application/json or multipart/form-data"}})
+
+    if not ec or not sc or not file_infos:
+        raise HTTPException(status_code=400, detail={"ret": {"code": 400, "msg": "缺少必要参数"}})
+
     task = Task(
         project_id=projectId,
-        external_code=body.externalCode,
-        scene=body.scene,
+        external_code=ec,
+        scene=sc,
         status=TaskStatus.PENDING.value,
         current_stage=TaskStage.INITIALIZING.value,
     )
@@ -40,43 +142,23 @@ def create_task(
     db.commit()
     db.refresh(task)
 
-    task_dir = os.path.join(UPLOAD_DIR, str(task.id))
-    os.makedirs(task_dir, exist_ok=True)
-
-    file_infos = []
-    for fi in body.fileInfos:
-        file_url = os.path.join(task_dir, fi.fileName)
-        content = b""
-        if os.path.exists(fi.fileUrl):
-            with open(fi.fileUrl, "rb") as f:
-                content = f.read()
-
-        actual_sha256 = fi.sha256 or ""
-        if content:
-            actual_sha256 = hashlib.sha256(content).hexdigest()
-            with open(file_url, "wb") as f:
-                f.write(content)
-
-        content_length = fi.contentLength or len(content)
-
+    result_files = []
+    for fi in file_infos:
+        content = file_contents.get(fi.fileName, b"")
+        saved = _save_file(task.id, fi, content=content)
         task_file = TaskFile(
             task_id=task.id,
-            fileName=fi.fileName,
-            sha256=actual_sha256,
-            contentLength=content_length,
-            fileUrl=file_url,
+            fileName=saved.fileName,
+            sha256=saved.sha256,
+            contentLength=saved.contentLength,
+            fileUrl=saved.fileUrl,
         )
         db.add(task_file)
-        file_infos.append(FileInfo(
-            fileName=fi.fileName,
-            sha256=actual_sha256,
-            contentLength=content_length,
-            fileUrl=file_url,
-        ))
+        result_files.append(saved)
 
     db.commit()
 
-    return CreateTaskRsp(taskId=task.id, fileInfos=file_infos)
+    return CreateTaskRsp(taskId=task.id, fileInfos=result_files)
 
 
 @router.post("/{task_id}/start", response_model=StartTaskRsp)
@@ -134,7 +216,7 @@ def query_task(
 
     download_infos = []
     if task.status == TaskStatus.COMPLETED.value:
-        compressed_dir = os.path.join(UPLOAD_DIR, str(task.id), "compressed")
+        compressed_dir = os.path.join(TASK_OUTPUT_DIR, str(task.id), "compressed")
         if os.path.isdir(compressed_dir):
             for fname in os.listdir(compressed_dir):
                 fpath = os.path.join(compressed_dir, fname)
@@ -147,9 +229,32 @@ def query_task(
                     ))
 
     return GetTaskRsp(
+        taskId=task.id,
         status=task.status,
         currentStage=task.current_stage,
         progress=task.progress,
         remainingTime=task.remaining_time,
+        scene=task.scene,
         downloadInfos=download_infos,
     )
+
+
+@router.get("/{task_id}/download")
+def download_file(
+    task_id: str,
+    file: str,
+    projectId: str = Header(..., max_length=20),
+    db: Session = Depends(get_database),
+    _auth: str = Depends(verify_project_auth),
+):
+    """下载任务输出文件."""
+    task = db.query(Task).filter(Task.id == task_id, Task.project_id == projectId).first()
+    if not task:
+        raise HTTPException(status_code=404, detail={"ret": {"code": 404, "msg": "Task not found"}})
+
+    safe_name = _safe_filename(file)
+    fpath = os.path.join(TASK_OUTPUT_DIR, str(task.id), "compressed", safe_name)
+    if not os.path.isfile(fpath):
+        raise HTTPException(status_code=404, detail={"ret": {"code": 404, "msg": "File not found"}})
+
+    return FileResponse(fpath, filename=safe_name)

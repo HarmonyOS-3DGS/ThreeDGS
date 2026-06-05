@@ -1,5 +1,5 @@
 """Pydantic schemas for task API."""
-from typing import Optional
+from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 
@@ -18,7 +18,7 @@ class FileInfo(BaseModel):
 class CreateTaskReq(BaseModel):
     externalCode: str = Field(..., max_length=256)
     fileInfos: list[FileInfo] = Field(..., min_length=1, max_length=3)
-    scene: str = Field(..., max_length=32)
+    scene: Literal["commodity", "indoor", "outdoor"]
 
 
 class CreateTaskRsp(BaseModel):
@@ -34,11 +34,19 @@ class StartTaskRsp(BaseModel):
 
 class GetTaskRsp(BaseModel):
     ret: ConnectRet = ConnectRet()
+    taskId: str
     status: str
     currentStage: str
     progress: int
     remainingTime: int
+    scene: str
     downloadInfos: list[FileInfo] = []
+
+
+class TaskListResponse(BaseModel):
+    ret: ConnectRet = ConnectRet()
+    items: list[GetTaskRsp]
+    total: int
 
 
 class TaskStatusEvent(BaseModel):

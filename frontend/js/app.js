@@ -1,12 +1,12 @@
-/* 3DGS Platform frontend app */
-const TASKS_API = "/tasks";
+/* 3DGS Platform frontend */
+const API = "/tasks";
 const AUTH_TOKEN = "3dgs-dev-2026";
 
-function apiHeaders() {
-    return { "Authorization": AUTH_TOKEN };
+function apiHeaders(projectId) {
+    return { "Authorization": AUTH_TOKEN, "projectId": projectId };
 }
 
-// Upload form handler
+// ====== Upload page ======
 const uploadForm = document.getElementById("upload-form");
 if (uploadForm) {
     uploadForm.addEventListener("submit", async (e) => {
@@ -33,34 +33,35 @@ if (uploadForm) {
         const hash = await crypto.subtle.digest("SHA-256", buf);
         const sha256 = Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
 
-        const body = {
-            externalCode: externalCode,
-            fileInfos: [{
-                fileName: file.name,
-                sha256: sha256,
-                contentLength: file.size,
-                fileUrl: "",
-            }],
-            scene: scene,
-        };
+        const formData = new FormData();
+        formData.append("externalCode", externalCode);
+        formData.append("scene", scene);
+        formData.append("filesMeta", JSON.stringify([{
+            fileName: file.name,
+            sha256: sha256,
+            contentLength: file.size,
+            fileUrl: "",
+        }]));
+        formData.append("files", file);
 
         try {
-            const res = await fetch(TASKS_API, {
+            const res = await fetch(API, {
                 method: "POST",
-                headers: { ...apiHeaders(), "Content-Type": "application/json", "projectId": projectId },
-                body: JSON.stringify(body),
+                headers: { "Authorization": AUTH_TOKEN, "projectId": projectId },
+                body: formData,
             });
             const data = await res.json();
             if (res.ok) {
                 const taskId = data.taskId;
                 result.innerHTML = `
-                    <p style="color:#22c55e;">创建成功！</p>
-                    <p>Task ID: <code>${taskId}</code></p>
-                    <button onclick="startTask('${projectId}','${taskId}')" style="margin-top:0.5rem;">启动任务</button>
-                    <p><a href="/viewer.html?id=${taskId}&projectId=${projectId}">查看进度</a></p>
+                    <p style="color:#22c55e;">任务创建成功: <code>${taskId}</code></p>
+                    <button onclick="startTask('${projectId}','${taskId}')">启动训练</button>
+                    <span id="preview-status" style="margin-left:1rem;font-size:0.85rem;color:#64748b;"></span>
                 `;
+                // Start polling task status
+                pollTask(projectId, taskId, "preview-status");
             } else {
-                const msg = data.detail?.ret?.msg || data.detail || "创建失败";
+                const msg = (data.detail?.ret?.msg) || data.detail || "创建失败";
                 result.innerHTML = `<p style="color:#ef4444;">${msg}</p>`;
             }
         } catch (err) {
@@ -71,16 +72,80 @@ if (uploadForm) {
     });
 }
 
+function pollTask(projectId, taskId, elId) {
+    const el = document.getElementById(elId);
+    const timer = setInterval(async () => {
+        try {
+            const res = await fetch(`${API}/${taskId}`, { headers: apiHeaders(projectId) });
+            if (!res.ok) return;
+            const data = await res.json();
+            if (el) el.textContent = `状态: ${data.status} | 进度: ${data.progress}%`;
+        } catch {}
+    }, 2000);
+}
+
 async function startTask(projectId, taskId) {
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = "启动中...";
     try {
-        const res = await fetch(`${TASKS_API}/${taskId}/start`, {
+        const res = await fetch(`${API}/${taskId}/start`, {
             method: "POST",
-            headers: { "Authorization": AUTH_TOKEN, "projectId": projectId },
+            headers: apiHeaders(projectId),
         });
         const data = await res.json();
-        alert(data.ret?.msg || "任务已启动");
-        window.location.href = `/viewer.html?id=${taskId}&projectId=${projectId}`;
+        if (res.ok) {
+            btn.textContent = "已启动";
+            setTimeout(() => { window.location.href = `/viewer.html?id=${taskId}&projectId=${projectId}`; }, 1000);
+        } else {
+            const msg = (data.detail?.ret?.msg) || "启动失败";
+            btn.textContent = msg;
+            btn.disabled = false;
+        }
     } catch {
-        alert("启动失败");
+        btn.textContent = "启动失败";
+        btn.disabled = false;
     }
+}
+
+// ====== Status list page ======
+const taskList = document.getElementById("project-list");
+if (taskList) {
+    async function loadTasks() {
+        const projectId = sessionStorage.getItem("projectId") || prompt("请输入项目 ID:") || "default";
+        sessionStorage.setItem("projectId", projectId);
+        try {
+            const res = await fetch(API, { headers: apiHeaders(projectId) });
+            if (!res.ok) {
+                taskList.innerHTML = `<li style="text-align:center;color:#64748b;">无任务 (${res.status})</li>`;
+                return;
+            }
+            const data = await res.json();
+            if (!data.items || data.items.length === 0) {
+                taskList.innerHTML = `<li style="text-align:center;color:#64748b;">暂无任务</li>`;
+                return;
+            }
+            taskList.innerHTML = data.items.map(t => `
+                <li class="project-item">
+                    <div>
+                        <strong>${t.taskId}</strong>
+                        <div style="font-size:0.8rem;color:#64748b;margin-top:0.25rem;">
+                            ${t.currentStage} · 剩余 ${t.remainingTime}s
+                        </div>
+                    </div>
+                    <div style="text-align:right;">
+                        <span class="status-badge status-${t.status}">${t.status}</span>
+                        <div class="progress-bar" style="width:120px;margin-top:0.5rem;">
+                            <div class="progress-fill" style="width:${t.progress}%">${t.progress}%</div>
+                        </div>
+                        ${t.status === "completed" ? `<a href="/viewer.html?id=${t.taskId}&projectId=${projectId}">查看</a>` : ""}
+                    </div>
+                </li>
+            `).join("");
+        } catch {
+            taskList.innerHTML = `<li style="text-align:center;color:#ef4444;">加载失败</li>`;
+        }
+    }
+    loadTasks();
+    setInterval(loadTasks, 5000);
 }

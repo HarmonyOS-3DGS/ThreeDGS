@@ -25,7 +25,7 @@ class TestCreateTask:
     def test_create_task_missing_required(self, client):
         body = {"externalCode": "EXT-001", "scene": "indoor"}
         response = client.post("/tasks", json=body, headers={"projectId": "proj-01"})
-        assert response.status_code == 422
+        assert response.status_code in (400, 422)
 
     def test_create_task_missing_project_id(self, client):
         body = self._create_body()
