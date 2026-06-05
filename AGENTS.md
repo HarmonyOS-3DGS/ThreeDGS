@@ -315,6 +315,9 @@ python scripts/integration_test.py
 
 ## 代码风格与开发规范
 
+0. **Git 提交规则**：
+   - Author 和 Committer **必须且仅能为** `fryandev <268098688+fryandev@users.noreply.github.com>`。禁止使用任何其他姓名或邮箱，禁止出现真实身份信息。提交前设置：`$env:GIT_COMMITTER_NAME="fryandev"; $env:GIT_COMMITTER_EMAIL="268098688+fryandev@users.noreply.github.com"; git commit --author="fryandev <268098688+fryandev@users.noreply.github.com>"`。
+   - **禁止自动提交代码**。只在用户明确要求提交时才提交。提交 message 需基于代码最终 diff 内容概括，而非对话过程。未经用户确认不得执行 commit。
 1. **语言**：项目注释、文档、README、前端 UI 文本均使用 **中文**。代码中的字符串常量（如状态值、错误信息）也使用中文。
 2. **导入顺序**：标准库 → 第三方库 → 项目内部模块（`backend.*`）
 3. **类型注解**：API Schema 使用 Pydantic 2.x 模型；函数参数尽量标注类型
