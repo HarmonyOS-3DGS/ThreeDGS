@@ -5,6 +5,10 @@ import os
 import shutil
 from datetime import datetime
 
+import aiofiles.os
+import aiofiles
+from aiofiles import os as aio_os
+
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import ValidationError
@@ -17,8 +21,8 @@ from backend.api.schemas.task import (
 )
 from backend.api.deps import get_database
 from backend.core.auth import verify_app_auth, verify_project_auth
-from backend.worker.tasks.shared import TASK_OUTPUT_DIR
-from backend.worker.tasks.pipeline import submit_training_pipeline
+from backend.core.config import TASK_OUTPUT_DIR
+from backend.core.task_publisher import submit_pipeline
 
 router = APIRouter(prefix="/tasks", tags=["taskManagement"])
 
@@ -28,10 +32,10 @@ def _safe_filename(filename: str) -> str:
     return os.path.basename(filename)
 
 
-def _save_file(task_id: str, fi: FileInfo, content: bytes = b"") -> FileInfo:
+async def _save_file(task_id: str, fi: FileInfo, content: bytes = b"") -> FileInfo:
     safe_name = _safe_filename(fi.fileName)
     task_dir = os.path.join(TASK_OUTPUT_DIR, str(task_id))
-    os.makedirs(task_dir, exist_ok=True)
+    await aiofiles.os.makedirs(task_dir, exist_ok=True)
 
     file_url = os.path.join(task_dir, safe_name)
     actual_sha256 = fi.sha256 or ""
@@ -40,14 +44,14 @@ def _save_file(task_id: str, fi: FileInfo, content: bytes = b"") -> FileInfo:
     if not content and fi.fileUrl:
         safe_url = os.path.join(task_dir, _safe_filename(os.path.basename(fi.fileUrl)))
         if os.path.isfile(safe_url):
-            with open(safe_url, "rb") as f:
-                content = f.read()
+            async with aiofiles.open(safe_url, "rb") as f:
+                content = await f.read()
 
     if content:
         actual_sha256 = hashlib.sha256(content).hexdigest()
         content_length = len(content)
-        with open(file_url, "wb") as f:
-            f.write(content)
+        async with aiofiles.open(file_url, "wb") as f:
+            await f.write(content)
 
     return FileInfo(
         fileName=safe_name,
@@ -145,7 +149,7 @@ async def create_task(
     result_files = []
     for fi in file_infos:
         content = file_contents.get(fi.fileName, b"")
-        saved = _save_file(task.id, fi, content=content)
+        saved = await _save_file(task.id, fi, content=content)
         task_file = TaskFile(
             task_id=task.id,
             fileName=saved.fileName,
@@ -192,7 +196,7 @@ def start_task(
     )
 
     if first_video:
-        submit_training_pipeline(task_id, first_video.fileUrl)
+        submit_pipeline(task_id, first_video.fileUrl)
     else:
         task.status = TaskStatus.FAILED.value
         task.error_message = "没有找到可处理的视频文件"

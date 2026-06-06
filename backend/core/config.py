@@ -1,4 +1,6 @@
 """Application configuration using Pydantic Settings."""
+import os
+
 from pydantic_settings import BaseSettings
 from pydantic import Field
 
@@ -44,3 +46,6 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# 任务输出目录（跨层共享的配置常量）
+TASK_OUTPUT_DIR = os.path.join(settings.local_storage_dir, "tasks")

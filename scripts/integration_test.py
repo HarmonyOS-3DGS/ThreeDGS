@@ -1,14 +1,13 @@
 """
-Real integration test: starts actual API + Worker, sends real HTTP requests.
+Real integration test: starts API + Worker in same process (threads),
+sends real HTTP requests.
 Usage: python scripts/integration_test.py
 """
 import json
 import os
 import sys
 import time
-import signal
-import subprocess
-import tempfile
+import threading
 from pathlib import Path
 
 # Ensure project root on path
@@ -19,7 +18,8 @@ import httpx
 API_PORT = 18000
 BASE_URL = f"http://localhost:{API_PORT}"
 API_KEY = "3dgs-dev-2026"
-HEADERS = {"X-API-Key": API_KEY}
+PROJECT_ID = "integration-test"
+HEADERS = {"Authorization": API_KEY, "projectId": PROJECT_ID}
 
 # Set local env for integration test
 os.environ["DATABASE_URL"] = "sqlite:///./integration_test.db"
@@ -61,32 +61,49 @@ def run_test():
 
     # Initialize DB
     print_step("1. Initialize database")
-    result = subprocess.run(
-        [sys.executable, "-c", "from backend.core.database import init_db; init_db(); print('OK')"],
-        capture_output=True, text=True, cwd=Path(__file__).parent.parent,
-    )
-    print(result.stdout.strip() if result.stdout else result.stderr)
+    from backend.core.database import init_db
+    init_db()
+    print("OK")
+
+    # Start Celery Worker thread
+    print_step("2. Start Celery Worker")
+    from backend.worker.celery_app import app as celery_app
+
+    def run_worker():
+        worker = celery_app.Worker(
+            hostname="integration_worker@localhost",
+            pool="solo",
+            concurrency=1,
+            loglevel="warning",
+            broker_connection_retry_on_startup=True,
+        )
+        worker.start()
+
+    worker_thread = threading.Thread(target=run_worker, daemon=True)
+    worker_thread.start()
+    time.sleep(2)
+    print("   Worker thread started")
 
     # Start API server
-    print_step("2. Start FastAPI server")
-    api_proc = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "backend.api.main:app", "--host", "127.0.0.1", "--port", str(API_PORT)],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=Path(__file__).parent.parent,
-    )
+    print_step("3. Start FastAPI server")
+    import uvicorn
+    from backend.api.main import app as fastapi_app
 
-    # Start Celery Worker
-    print("3. Start Celery Worker")
-    worker_proc = subprocess.Popen(
-        [sys.executable, "-m", "celery", "-A", "backend.worker.celery_app", "worker", "--loglevel=warning", "-c", "1", "--pool=solo"],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=Path(__file__).parent.parent,
-    )
+    api_server = None
 
-    # Wait for API readiness
-    print("4. Wait for API ready...")
+    def run_api():
+        nonlocal api_server
+        config = uvicorn.Config(
+            fastapi_app, host="127.0.0.1", port=API_PORT, log_level="warning"
+        )
+        api_server = uvicorn.Server(config)
+        api_server.run()
+
+    api_thread = threading.Thread(target=run_api, daemon=True)
+    api_thread.start()
+
     if not wait_for_service(f"{BASE_URL}/docs", timeout=15):
         print("[FAIL] API failed to start")
-        api_proc.kill()
-        worker_proc.kill()
         return False
     print("   [PASS] API ready")
 
@@ -95,7 +112,7 @@ def run_test():
 
     # Test 1: Health check via docs
     print_step("Test 1: API docs (health check)")
-    r = httpx.get(f"{BASE_URL}/docs", headers=HEADERS, timeout=5)
+    r = httpx.get(f"{BASE_URL}/docs", timeout=5)
     if r.status_code == 200:
         print("   [PASS] PASS - API docs accessible")
         passed += 1
@@ -105,7 +122,9 @@ def run_test():
 
     # Test 2: Create task
     print_step("Test 2: Create task")
-    files_meta = json.dumps([{"original_filename": "test.mp4", "sha256": "abc", "file_size": 26}])
+    files_meta = json.dumps([{"fileName": "test.mp4", "sha256": "abc", "contentLength": 26, "fileUrl": ""}])
+    import tempfile
+
     with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
         f.write(b"FAKE_VIDEO_DATA_FOR_TESTING")
         temp_path = f.name
@@ -115,14 +134,14 @@ def run_test():
             r = httpx.post(
                 f"{BASE_URL}/tasks",
                 headers=HEADERS,
-                data={"external_code": "INT-TEST-001", "files_meta": files_meta},
+                data={"externalCode": "INT-TEST-001", "filesMeta": files_meta, "scene": "indoor"},
                 files={"files": ("test.mp4", f, "video/mp4")},
                 timeout=10,
             )
         print(f"   Response: {r.status_code} - {r.text[:200]}")
         if r.status_code == 200:
             task = r.json()
-            task_id = task["task_id"]
+            task_id = task["taskId"]
             print(f"   [PASS] PASS - Created task {task_id}")
             passed += 1
         else:
@@ -134,18 +153,19 @@ def run_test():
 
     if not task_id:
         print("\n[FAIL] Cannot continue without task_id")
-        api_proc.kill()
-        worker_proc.kill()
+        if api_server:
+            api_server.should_exit = True
+        api_thread.join(timeout=5)
         return False
 
     # Test 3: Start task
     print_step("Test 3: Start task")
     r = httpx.post(f"{BASE_URL}/tasks/{task_id}/start", headers=HEADERS, timeout=5)
-    if r.status_code == 200 and r.json()["code"] == 0:
+    if r.status_code == 200 and r.json()["ret"]["code"] == 0:
         print(f"   [PASS] PASS - Task started: {r.json()}")
         passed += 1
     else:
-        print(f"   [FAIL] FAIL - {r.status_code}")
+        print(f"   [FAIL] FAIL - {r.status_code} {r.text}")
         failed += 1
 
     # Test 4: Query task
@@ -155,13 +175,14 @@ def run_test():
         print(f"   [PASS] PASS - Task status: {r.json()['status']}")
         passed += 1
     else:
-        print(f"   [FAIL] FAIL - {r.status_code}")
+        print(f"   [FAIL] FAIL - {r.status_code} {r.text}")
         failed += 1
 
     # Test 5: SSE events (short timeout, just verify endpoint works)
     print_step("Test 5: SSE events endpoint")
     try:
-        with httpx.stream("GET", f"{BASE_URL}/tasks/{task_id}/events?X-API-Key={API_KEY}", timeout=3) as stream:
+        sse_url = f"{BASE_URL}/tasks/{task_id}/events?projectId={PROJECT_ID}&Authorization={API_KEY}"
+        with httpx.stream("GET", sse_url, timeout=3) as stream:
             chunk = ""
             for data in stream.iter_text():
                 chunk += data
@@ -186,7 +207,7 @@ def run_test():
         data = r.json()
         final_status = data["status"]
         progress = data["progress"]
-        stage = data["current_stage"]
+        stage = data["currentStage"]
         print(f"   [{i+1}s] status={final_status}, stage={stage}, progress={progress}%")
         if final_status in ("completed", "failed"):
             break
@@ -215,10 +236,9 @@ def run_test():
 
     # Cleanup
     print_step("Cleanup")
-    api_proc.send_signal(signal.CTRL_BREAK_EVENT if sys.platform == "win32" else signal.SIGTERM)
-    worker_proc.send_signal(signal.CTRL_BREAK_EVENT if sys.platform == "win32" else signal.SIGTERM)
-    api_proc.wait(timeout=5)
-    worker_proc.wait(timeout=5)
+    if api_server:
+        api_server.should_exit = True
+    api_thread.join(timeout=5)
 
     for p in ["integration_test.db", "integration_test_storage"]:
         if os.path.exists(p):

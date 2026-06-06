@@ -83,11 +83,15 @@ cp .env.example .env       # 生产模式（需 PostgreSQL + Redis + MinIO）
 # 4. 初始化数据库
 python -c "from backend.core.database import init_db; init_db()"
 
-# 5. 启动 Worker（新开终端）
-celery -A backend.worker.celery_app worker --loglevel=info -c 1 --pool=solo
+# 5. 启动（二选一）
+# 方式 A：同进程线程模式（memory broker 共享，推荐）
+python run_local.py
 
-# 6. 启动 API
-uvicorn backend.api.main:app --reload --port 8000
+# 方式 B：分进程启动（需 Redis 等跨进程共享 broker）
+#   修改 .env：CELERY_BROKER_URL=redis://localhost:6379/0
+#   redis-server &
+#   celery -A backend.worker.celery_app worker --loglevel=info -c 1 --pool=solo
+#   uvicorn backend.api.main:app --reload --port 8000
 ```
 
 ---

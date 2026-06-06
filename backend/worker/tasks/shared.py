@@ -1,10 +1,12 @@
 """Shared utilities for Celery tasks."""
+import logging
 import os
 from datetime import datetime
-from backend.core.database import SessionLocal, Task
-from backend.core.config import settings
 
-TASK_OUTPUT_DIR = os.path.join(settings.local_storage_dir, "tasks")
+from backend.core.database import SessionLocal, Task
+from backend.core.config import settings, TASK_OUTPUT_DIR
+
+logger = logging.getLogger(__name__)
 
 
 def update_task(task_id: str, stage: str, progress: int, status: str = None, error: str = None):
@@ -25,8 +27,8 @@ def update_task(task_id: str, stage: str, progress: int, status: str = None, err
                 db.commit()
         finally:
             db.close()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"更新任务 {task_id} 失败: {e}")
 
 
 def task_output_path(task_id: str, *parts: str) -> str:

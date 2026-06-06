@@ -1,6 +1,9 @@
 """MinIO storage client wrapper."""
+from io import BytesIO
+
 from minio import Minio
 from minio.error import S3Error
+
 from backend.core.config import settings
 
 
@@ -45,3 +48,29 @@ class MinioStorageClient:
     def delete_object(self, object_name: str) -> None:
         """Delete an object from MinIO."""
         self.client.remove_object(self.bucket, object_name)
+
+    def put_object(self, object_name: str, data: bytes) -> str:
+        """Upload bytes directly to MinIO."""
+        self.client.put_object(
+            self.bucket, object_name, BytesIO(data), len(data)
+        )
+        return f"{self.bucket}/{object_name}"
+
+    def list_objects(self, prefix: str = "") -> list[str]:
+        """List all objects with the given prefix."""
+        objects = self.client.list_objects(self.bucket, prefix=prefix, recursive=True)
+        return [obj.object_name for obj in objects]
+
+    def object_exists(self, object_name: str) -> bool:
+        try:
+            self.client.stat_object(self.bucket, object_name)
+            return True
+        except S3Error:
+            return False
+
+    def get_object_size(self, object_name: str) -> int:
+        try:
+            stat = self.client.stat_object(self.bucket, object_name)
+            return stat.size
+        except S3Error:
+            return 0

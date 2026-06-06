@@ -1,6 +1,6 @@
 /* 3DGS Platform frontend */
-const API = "/tasks";
-const AUTH_TOKEN = "3dgs-dev-2026";
+const API = APP_CONFIG.API_BASE;
+const AUTH_TOKEN = APP_CONFIG.AUTH_TOKEN;
 
 function apiHeaders(projectId) {
     return { "Authorization": AUTH_TOKEN, "projectId": projectId };
@@ -55,7 +55,7 @@ if (uploadForm) {
                 const taskId = data.taskId;
                 result.innerHTML = `
                     <p style="color:#22c55e;">任务创建成功: <code>${taskId}</code></p>
-                    <button onclick="startTask('${projectId}','${taskId}')">启动训练</button>
+                    <button onclick="startTask('${projectId}','${taskId}', this)">启动训练</button>
                     <span id="preview-status" style="margin-left:1rem;font-size:0.85rem;color:#64748b;"></span>
                 `;
                 // Start polling task status
@@ -80,12 +80,16 @@ function pollTask(projectId, taskId, elId) {
             if (!res.ok) return;
             const data = await res.json();
             if (el) el.textContent = `状态: ${data.status} | 进度: ${data.progress}%`;
+            if (data.status === "completed" || data.status === "failed") {
+                clearInterval(timer);
+            }
         } catch {}
     }, 2000);
+    // 页面卸载时清理定时器
+    window.addEventListener("beforeunload", () => clearInterval(timer), { once: true });
 }
 
-async function startTask(projectId, taskId) {
-    const btn = event.target;
+async function startTask(projectId, taskId, btn) {
     btn.disabled = true;
     btn.textContent = "启动中...";
     try {

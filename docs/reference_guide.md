@@ -79,10 +79,15 @@ docker-compose.yml ←──────  3dgs_engineering_guide/Ch7 (GPU 调度
 
 | 项目 | 说明 | 优先级 |
 |------|------|--------|
-| 任务列表接口 | 当前无 GET /tasks 列表，前端 status.html 无法使用 | 高 |
-| 文件下载接口 | 输出文件（SPZ/SOG）需提供 HTTP 下载端点 | 高 |
+| ✅ 任务列表接口 | GET /tasks 已实现 | 已完成 |
+| ✅ 文件下载接口 | GET /tasks/{id}/download 已实现 | 已完成 |
+| ✅ 存储抽象接口 | `StorageClient` Protocol + 本地/MinIO 双实现 | 已完成 |
+| ✅ API-Worker 解耦 | `task_publisher` 注册回调机制 | 已完成 |
 | OBS 对象存储 | 目前使用本地文件系统，需切换到 OBS（华为云对象存储） | 中 |
 | 文件类型校验 | 上传时仅前端 accept 限制，后端需校验真实 MIME 类型 | 中 |
+| `_save_file` 接入存储抽象 | 当前仍直接 `aiofiles.open` 写入本地，生产模式需改为 `storage.put_object()` | 中 |
+| Worker Repository 抽象 | `update_task` 直接操作 `SessionLocal`，建议抽象为 `TaskRepository` | 低 |
+| SSE 异步化 | `task_event_generator` 同步查询数据库，建议改用 `AsyncSession` | 低 |
 
 ### Phase 2 规划（参照 roadmap 的 Phase "Internal Beta"）
 

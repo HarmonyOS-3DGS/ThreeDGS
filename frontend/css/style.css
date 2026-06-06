@@ -31,12 +31,14 @@ button:disabled { background: #475569; cursor: not-allowed; }
     height: 100%; background: linear-gradient(90deg, #0ea5e9, #22d3ee);
     transition: width 0.5s ease; display: flex; align-items: center;
     justify-content: center; font-size: 0.75rem; color: #0f172a; font-weight: bold;
+    min-width: 36px;
 }
 .status-badge {
     display: inline-block; padding: 0.25rem 0.75rem; border-radius: 999px;
     font-size: 0.875rem; font-weight: 500;
 }
 .status-pending { background: #475569; }
+.status-processing { background: #3b82f6; color: white; }
 .status-extracting { background: #f59e0b; color: #0f172a; }
 .status-colmap { background: #f59e0b; color: #0f172a; }
 .status-training { background: #8b5cf6; color: white; }

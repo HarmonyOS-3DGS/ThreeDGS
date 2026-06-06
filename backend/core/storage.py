@@ -1,6 +1,8 @@
 """Storage client - uses MinIO if available, falls back to local filesystem."""
 import os
+
 from backend.core.config import settings
+from backend.core.interfaces import StorageClient
 
 
 class _LazyStorage:

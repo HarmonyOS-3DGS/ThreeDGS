@@ -1,4 +1,6 @@
 """FastAPI application entry point."""
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -6,7 +8,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.core.database import init_db
 from backend.api.routers import tasks, sse
 
-app = FastAPI(title="3DGS Platform", version="3.0.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan events."""
+    init_db()
+    yield
+
+
+app = FastAPI(title="3DGS Platform", version="3.0.0", lifespan=lifespan)
 
 # CORS
 app.add_middleware(
@@ -16,11 +26,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Initialize database on startup
-@app.on_event("startup")
-def on_startup():
-    init_db()
 
 # API routes
 app.include_router(tasks.router)

@@ -1,17 +1,18 @@
 """pytest fixtures for the 3DGS platform."""
 import os
 
-# Disable external connections during tests
-os.environ["DATABASE_URL"] = "sqlite:///./test.db"
-os.environ["REDIS_URL"] = "redis://localhost:6379/0"
-os.environ["CELERY_BROKER_URL"] = "memory://"
-os.environ["CELERY_RESULT_BACKEND"] = "cache+memory://"
-os.environ["MINIO_ENDPOINT"] = "localhost:9000"
-os.environ["MINIO_ACCESS_KEY"] = "minioadmin"
-os.environ["MINIO_SECRET_KEY"] = "minioadmin"
-os.environ["MINIO_BUCKET"] = "gaussian"
-os.environ["MINIO_SECURE"] = "false"
-os.environ["API_KEY"] = "test-key"
+# 必须在导入任何 backend 模块前设置环境变量
+#（backend.core.database 在导入时会基于 settings 创建引擎）
+os.environ.setdefault("DATABASE_URL", "sqlite:///./test.db")
+os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
+os.environ.setdefault("CELERY_BROKER_URL", "memory://")
+os.environ.setdefault("CELERY_RESULT_BACKEND", "cache+memory://")
+os.environ.setdefault("MINIO_ENDPOINT", "localhost:9000")
+os.environ.setdefault("MINIO_ACCESS_KEY", "minioadmin")
+os.environ.setdefault("MINIO_SECRET_KEY", "minioadmin")
+os.environ.setdefault("MINIO_BUCKET", "gaussian")
+os.environ.setdefault("MINIO_SECURE", "false")
+os.environ.setdefault("API_KEY", "test-key")
 
 import pytest
 from fastapi.testclient import TestClient
@@ -36,14 +37,29 @@ def override_get_db():
         db.close()
 
 
-app.dependency_overrides[get_db] = override_get_db
+_original_get_db_override = None
 
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_db():
+    """Session-scoped fixture: 建表 → 注入测试 DB → 测试结束后清理。"""
+    global _original_get_db_override
+
     Base.metadata.create_all(bind=engine)
     init_db()
+
+    # 保存原始依赖并注入测试版本
+    _original_get_db_override = app.dependency_overrides.get(get_db)
+    app.dependency_overrides[get_db] = override_get_db
+
     yield
+
+    # 恢复原始依赖
+    if _original_get_db_override is not None:
+        app.dependency_overrides[get_db] = _original_get_db_override
+    elif get_db in app.dependency_overrides:
+        del app.dependency_overrides[get_db]
+
     Base.metadata.drop_all(bind=engine)
 
 
