@@ -9,7 +9,7 @@ import aiofiles.os
 import aiofiles
 from aiofiles import os as aio_os
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
@@ -247,12 +247,20 @@ def query_task(
 def download_file(
     task_id: str,
     file: str,
-    projectId: str = Header(..., max_length=20),
+    projectId_h: str | None = Header(None, alias="projectId", max_length=20),
+    projectId_q: str | None = Query(None, alias="projectId", max_length=20),
+    auth_h: str | None = Header(None, alias="Authorization"),
+    auth_q: str | None = Query(None, alias="Authorization"),
     db: Session = Depends(get_database),
-    _auth: str = Depends(verify_project_auth),
 ):
     """下载任务输出文件."""
-    task = db.query(Task).filter(Task.id == task_id, Task.project_id == projectId).first()
+    from backend.core.auth import _verify_auth_key
+    _verify_auth_key(auth_h or auth_q)
+    pid = projectId_h or projectId_q
+    if not pid:
+        raise HTTPException(status_code=422, detail={"ret": {"code": 422, "msg": "Missing projectId"}})
+
+    task = db.query(Task).filter(Task.id == task_id, Task.project_id == pid).first()
     if not task:
         raise HTTPException(status_code=404, detail={"ret": {"code": 404, "msg": "Task not found"}})
 

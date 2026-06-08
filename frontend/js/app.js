@@ -115,18 +115,32 @@ async function startTask(projectId, taskId, btn) {
 // ====== Status list page ======
 const taskList = document.getElementById("project-list");
 if (taskList) {
+    let currentProjectId = new URLSearchParams(window.location.search).get("projectId")
+        || sessionStorage.getItem("projectId")
+        || "default";
+
+    const inputEl = document.getElementById("project-id-input");
+    if (inputEl) inputEl.value = currentProjectId;
+
+    window.switchProject = function () {
+        const val = document.getElementById("project-id-input").value.trim();
+        if (val) {
+            currentProjectId = val;
+            sessionStorage.setItem("projectId", val);
+            loadTasks();
+        }
+    };
+
     async function loadTasks() {
-        const projectId = sessionStorage.getItem("projectId") || prompt("请输入项目 ID:") || "default";
-        sessionStorage.setItem("projectId", projectId);
         try {
-            const res = await fetch(API, { headers: apiHeaders(projectId) });
+            const res = await fetch(API, { headers: apiHeaders(currentProjectId) });
             if (!res.ok) {
                 taskList.innerHTML = `<li style="text-align:center;color:#64748b;">无任务 (${res.status})</li>`;
                 return;
             }
             const data = await res.json();
             if (!data.items || data.items.length === 0) {
-                taskList.innerHTML = `<li style="text-align:center;color:#64748b;">暂无任务</li>`;
+                taskList.innerHTML = `<li style="text-align:center;color:#64748b;">暂无任务 (项目: ${currentProjectId})</li>`;
                 return;
             }
             taskList.innerHTML = data.items.map(t => `
@@ -134,7 +148,7 @@ if (taskList) {
                     <div>
                         <strong>${t.taskId}</strong>
                         <div style="font-size:0.8rem;color:#64748b;margin-top:0.25rem;">
-                            ${t.currentStage} · 剩余 ${t.remainingTime}s
+                            ${t.currentStage} · ${t.scene} · 剩余 ${t.remainingTime}s
                         </div>
                     </div>
                     <div style="text-align:right;">
@@ -142,7 +156,7 @@ if (taskList) {
                         <div class="progress-bar" style="width:120px;margin-top:0.5rem;">
                             <div class="progress-fill" style="width:${t.progress}%">${t.progress}%</div>
                         </div>
-                        ${t.status === "completed" ? `<a href="/viewer.html?id=${t.taskId}&projectId=${projectId}">查看</a>` : ""}
+                        <a href="/viewer.html?id=${t.taskId}&projectId=${currentProjectId}">查看</a>
                     </div>
                 </li>
             `).join("");

@@ -17,7 +17,7 @@ def update_task(task_id: str, stage: str, progress: int, status: str = None, err
             if task:
                 task.current_stage = stage
                 task.progress = progress
-                task.remaining_time = max(0, 15 - progress // 7)
+                task.remaining_time = 0 if status == "completed" else max(0, 15 - progress // 7)
                 if status:
                     task.status = status
                 if error:

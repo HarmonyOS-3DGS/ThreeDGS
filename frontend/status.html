@@ -8,12 +8,17 @@
 </head>
 <body>
     <div class="container">
-        <h1>📋 任务列表</h1>
+        <h1>任务列表</h1>
         <nav class="nav">
             <a href="/index.html">上传</a>
             <a href="/status.html">任务列表</a>
         </nav>
         <div class="card">
+            <div style="margin-bottom:1rem;">
+                <label for="project-id-input" style="margin-right:0.5rem;">项目 ID:</label>
+                <input type="text" id="project-id-input" placeholder="输入项目 ID" maxlength="20" style="padding:0.4rem;width:200px;">
+                <button onclick="switchProject()" style="padding:0.4rem 1rem;">查看</button>
+            </div>
             <ul id="project-list" class="project-list">
                 <li style="text-align:center;color:#64748b;">加载中...</li>
             </ul>

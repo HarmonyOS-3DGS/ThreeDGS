@@ -38,6 +38,9 @@ uploads/
 Thumbs.db
 
 # Dev notes
-my_to_do.md
+todo/
 
 .kimi/
+.claude/
+openspec/
+claude.md

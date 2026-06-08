@@ -7,14 +7,14 @@ AUTH_HEADER = APIKeyHeader(name="Authorization", auto_error=False)
 
 
 def _verify_auth_key(auth_header: str | None) -> str:
+    expected = getattr(settings, "api_key", None)
+    if not expected:
+        return auth_header or ""
     if not auth_header:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"ret": {"code": 401, "msg": "Missing Authorization header"}},
         )
-    expected = getattr(settings, "api_key", None)
-    if not expected:
-        return auth_header
     if auth_header != expected:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
