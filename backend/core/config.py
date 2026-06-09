@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     task_pending_ttl_hours: int = Field(default=24)
     task_completed_ttl_days: int = Field(default=7)
 
+    # Pipeline defaults
+    default_fps: int = Field(default=5)
+    default_iterations: int = Field(default=30000)
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

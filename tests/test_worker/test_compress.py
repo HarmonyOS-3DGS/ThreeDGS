@@ -25,7 +25,7 @@ class TestCompress:
             with open(ply, "w") as f:
                 f.write("ply\n")
             with patch("backend.worker.tasks.compress.time.sleep"):
-                with patch("backend.worker.tasks.shared.TaskRepository.update_progress") as mock_update:
+                with patch("backend.worker.tasks.compress.TaskRepository.update_progress") as mock_update:
                     with patch("backend.worker.tasks.compress.TaskRepository.add_output_file"):
                         compress_result.run({"task_id": "test-id", "model_path": ply})
                         # 验证最终状态更新为 completed
@@ -40,7 +40,7 @@ class TestCompress:
             with open(ply, "w") as f:
                 f.write("ply\n")
             with patch("backend.worker.tasks.compress.time.sleep"):
-                with patch("backend.worker.tasks.shared.TaskRepository.update_progress"):
+                with patch("backend.worker.tasks.compress.TaskRepository.update_progress"):
                     with patch("backend.worker.tasks.compress.TaskRepository.add_output_file") as mock_add:
                         compress_result.run({"task_id": "test-id", "model_path": ply})
                         assert mock_add.call_count == 2

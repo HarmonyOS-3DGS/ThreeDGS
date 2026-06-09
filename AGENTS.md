@@ -100,11 +100,19 @@
 │   ├── core/                   # 基础设施层
 │   │   ├── __init__.py
 │   │   ├── config.py           # Pydantic Settings 配置（`.env` 驱动，含默认值）
-│   │   ├── database.py         # SQLAlchemy 引擎、Session、Task / TaskFile ORM 模型、init_db()
+│   │   ├── database.py         # SQLAlchemy 引擎、Session、Base、init_db()
+│   │   ├── repository.py      # TaskRepository 数据访问层（API 注入 / Worker 独立双模式）
+│   │   ├── file_utils.py      # 文件魔数校验（detect_mime）
 │   │   ├── auth.py             # Authorization 鉴权（app_auth + project_auth，API_KEY 留空则关闭鉴权）
+│   │   ├── task_publisher.py  # API-Worker 解耦桥接（懒加载 + 注册回调）
+│   │   ├── interfaces.py      # StorageClient Protocol 抽象接口
 │   │   ├── storage.py          # 存储工厂（USE_LOCAL_STORAGE 控制 MinIO / 本地切换）
 │   │   ├── local_storage.py    # 本地文件系统存储实现（LocalStorageClient）
-│   │   └── minio_storage.py    # MinIO 对象存储封装（MinioStorageClient）
+│   │   ├── minio_storage.py    # MinIO 对象存储封装（MinioStorageClient）
+│   │   └── models/             # ORM 模型（从 database.py 拆分）
+│   │       ├── __init__.py
+│   │       ├── task.py         # Task 模型 + TaskStatus / TaskStage 枚举
+│   │       └── task_file.py    # TaskFile 模型
 │   └── worker/                 # Celery Worker
 │       ├── __init__.py
 │       ├── celery_app.py       # Celery 应用配置 + Beat 定时任务调度
@@ -116,7 +124,7 @@
 │       └── tasks/              # 四阶段流水线 + 定时清理
 │           ├── __init__.py
 │           ├── pipeline.py     # 任务链编排（celery.chain）
-│           ├── shared.py       # 公共函数（update_task + task_output_path）
+│           ├── shared.py       # 公共函数（task_output_path）
 │           ├── extract_frames.py
 │           ├── colmap_sfm.py
 │           ├── train_gs.py
@@ -195,6 +203,8 @@
 | `API_PORT` | `8000` | API 监听端口 |
 | `TASK_PENDING_TTL_HOURS` | `24` | 过期 pending 任务清理阈值（小时） |
 | `TASK_COMPLETED_TTL_DAYS` | `7` | 过期 completed 任务清理阈值（天） |
+| `DEFAULT_FPS` | `5` | 帧提取默认帧率 |
+| `DEFAULT_ITERATIONS` | `30000` | 3DGS 训练默认迭代次数 |
 
 ---
 
@@ -328,7 +338,7 @@ curl "http://localhost:8000/tasks/{task_id}/download?file=model.spz" \
 
 ## 数据模型
 
-关键 ORM 模型定义在 `backend/core/database.py`，使用 SQLAlchemy 2.0 声明式基类，**无 Alembic 迁移脚本**，MVP 阶段通过 `init_db()` 自动建表。
+关键 ORM 模型定义在 `backend/core/models/`，使用 SQLAlchemy 2.0 声明式基类，**无 Alembic 迁移脚本**，MVP 阶段通过 `init_db()` 自动建表。
 
 > 📖 详细数据库设计文档见 `docs/database_design.md`，包含完整字段表、索引、状态流转图。修改 ORM 模型后请同步更新该文档。
 
@@ -360,7 +370,7 @@ curl "http://localhost:8000/tasks/{task_id}/download?file=model.spz" \
 | `fileName` | `String(256)` | 原始文件名（ORM 中使用驼峰命名） |
 | `sha256` | `String(64)` | 文件 SHA256 哈希 |
 | `contentLength` | `Integer` | 文件大小（字节） |
-| `fileUrl` | `String(1024)` | 文件存储路径（本地绝对路径） |
+| `fileUrl` | `String(1024)` | 文件存储路径（本地绝对路径或 MinIO 对象名） |
 | `fileRole` | `String(50)` | 文件角色：`source_video` / `source_images` / `compressed_model` |
 | `mimeType` | `String(128)` | MIME 类型（可选） |
 
@@ -379,10 +389,14 @@ curl "http://localhost:8000/tasks/{task_id}/download?file=model.spz" \
 
 2. **`backend/core/`** —— 基础设施层
    - `config.py`：全局配置单例 `settings`
-   - `database.py`：SQLAlchemy 引擎、`SessionLocal`、ORM 模型、`get_db()` generator
+   - `database.py`：SQLAlchemy 引擎、`SessionLocal`、`Base`、`get_db()` generator。ORM 模型定义已迁移至 `models/` 子模块
+   - `models/task.py`：`Task` ORM、`TaskStatus`/`TaskStage` 枚举、`_generate_task_id()`
+   - `models/task_file.py`：`TaskFile` ORM
+   - `repository.py`：`TaskRepository` 数据访问层，统一封装 DB 操作。支持 API 注入 Session 和 Worker 独立 Session 双模式
+   - `file_utils.py`：`detect_mime()` 通过文件头魔数校验真实 MIME 类型，防止后缀伪造
    - `auth.py`：`_verify_auth_key` 公共逻辑 + `verify_app_auth` / `verify_project_auth`
    - `storage.py`：懒加载代理 `_LazyStorage`，工厂函数 `get_storage()`
-   - `local_storage.py` / `minio_storage.py`：统一接口（`upload_file` / `download_file` / `get_presigned_url` / `delete_object`）
+   - `local_storage.py` / `minio_storage.py`：统一接口（`upload_file` / `download_file` / `get_presigned_url` / `delete_object` / `put_object`）
 
 3. **`backend/worker/`** —— 任务执行层
    - `celery_app.py`：Celery 实例、`beat_schedule`（每 30 分钟清理 pending，每小时清理 completed）
@@ -426,9 +440,9 @@ Celery 任务链在 `backend/worker/tasks/pipeline.py` 中通过 `celery.chain` 
 
 ```python
 chain(
-    extract_frames.s(task_id, video_path, fps=5),
+    extract_frames.s(task_id, video_path, fps=settings.default_fps),
     run_colmap.s(),
-    train_gaussian_splatting.s(iterations=30000),
+    train_gaussian_splatting.s(iterations=settings.default_iterations),
     compress_result.s(),
 )
 ```
@@ -510,7 +524,7 @@ python scripts/integration_test.py
    - 所有表通过 `init_db()` 自动创建（无 Alembic 迁移脚本，MVP 阶段简化处理）
    - SQLite 场景需设置 `connect_args={"check_same_thread": False}`
 
-5. **任务更新模式**：每个 Celery 任务内部通过 `backend/worker/tasks/shared.py` 中的 `update_task()` 公共函数直接操作数据库，使用 `SessionLocal` 新建独立 session，并用 `try/finally` 确保关闭
+5. **任务更新模式**：每个 Celery 任务内部通过 `backend/core/repository.py` 中的 `TaskRepository.update_progress()` 静态方法直接操作数据库，使用 `SessionLocal` 新建独立 session，并用 `try/finally` 确保关闭。`shared.py` 中的旧 `update_task()` 包装已移除。
 
 6. **异常处理**：Worker 任务中的进度更新（`self.update_state`）使用 `try/except` 静默忽略，避免测试环境无 Celery 上下文时崩溃
 
@@ -526,7 +540,7 @@ python scripts/integration_test.py
 
 1. **API Key**：生产环境必须设置强随机 `API_KEY`，前端硬编码的 Key `3dgs-dev-2026` 仅用于开发测试
 2. **CORS**：`backend/api/main.py` 中配置 `allow_origins=["*"]`，`allow_credentials=False`，生产环境应限制为具体域名
-3. **文件上传**：`tasks.py` 将上传文件保存到 `local_storage/tasks/{task_id}/`，仅做 `os.path.basename()` 防穿越，未做文件类型深度校验，生产需加强
+3. **文件上传**：`tasks.py` 将上传文件保存到 `local_storage/tasks/{task_id}/`，仅做 `os.path.basename()` 防穿越；后端通过 `detect_mime()` 校验文件头魔数（视频/图片角色不符则拒绝）
 4. **MinIO**：默认使用 `minioadmin/minioadmin`，生产必须修改
 5. **.env 文件**：`.env` 和 `.env.local` 已加入 `.gitignore`，禁止提交密钥
 6. **数据库连接**：`pool_pre_ping=True` 用于生产环境连接保活；SQLite 默认 `check_same_thread=False`

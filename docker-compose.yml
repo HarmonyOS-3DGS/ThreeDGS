@@ -94,7 +94,7 @@ services:
       retries: 5
 
   minio:
-    image: minio/minio:RELEASE.2024-06-13T22-53-56Z
+    image: minio/minio:RELEASE.2024-06-13T22-53-56Z  # TODO: 生产环境应改用 latest 或定期更新版本标签
     restart: unless-stopped
     command: server /data --console-address ":9001"
     ports:

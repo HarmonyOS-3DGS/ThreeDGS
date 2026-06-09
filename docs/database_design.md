@@ -1,8 +1,9 @@
 # 数据库设计文档
 
-> 本文档对应实现代码：`backend/core/database.py`
+> 本文档对应实现代码：`backend/core/models/task.py`、`backend/core/models/task_file.py`
+> 数据库引擎和 Session 配置仍在 `backend/core/database.py`
 >
-> ⚠️ **代码与文档同步提醒**：修改 `backend/core/database.py` 中的 ORM 模型（字段、类型、约束、关系）后，请同步更新本文档。反之，设计变更也应先在文档中确认。
+> ⚠️ **代码与文档同步提醒**：修改 ORM 模型后请同步更新本文档。反之，设计变更也应先在文档中确认。
 
 ---
 
@@ -48,7 +49,7 @@
 | `fileName` | `String(256)` | NOT NULL | 原始文件名（ORM 中使用驼峰命名） |
 | `sha256` | `String(64)` | NOT NULL | 文件 SHA-256 哈希值 |
 | `contentLength` | `Integer` | NOT NULL | 文件大小（字节） |
-| `fileUrl` | `String(1024)` | NOT NULL | 文件存储路径（本地绝对路径或 MinIO 路径） |
+| `fileUrl` | `String(1024)` | NOT NULL | 文件存储路径（本地绝对路径或 MinIO 对象名） |
 | `fileRole` | `String(50)` | NOT NULL, DEFAULT `'source_video'` | 文件角色：`source_video` / `source_images` / `compressed_model` / `pose_data` |
 | `mimeType` | `String(128)` | NULLABLE | MIME 类型，如 `video/mp4`、`image/png` |
 
@@ -165,7 +166,8 @@ def init_db():
 
 ## 同步提醒
 
-> **代码位置**：`backend/core/database.py`
+> **代码位置**：`backend/core/models/task.py`、`backend/core/models/task_file.py`
+> 引擎和连接配置：`backend/core/database.py`
 >
 > 修改上述文件中的 ORM 模型后，必须同步更新本文档的字段表、索引、状态流转等章节。
 >

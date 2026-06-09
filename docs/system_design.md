@@ -41,9 +41,10 @@
 |------|------|---------|
 | Web 层 | 接收请求、鉴权、任务生命周期管理、SSE 推送 | REST API |
 | 数据库 | 存储任务元数据（状态、进度、文件索引） | SQL |
+| TaskRepository | 统一封装 Task/TaskFile 数据库操作，API 注入 + Worker 独立双模式 | Python API |
 | 任务队列 | 异步流水线调度，四阶段串联 | 消息 |
 | Worker | 执行算法阶段（帧提取/位姿/训练/压缩） | 内部调用 |
-| 对象存储 | 存储上传文件和输出文件 | S3 兼容 API |
+| 对象存储 | 存储上传文件和输出文件（MinIO / 本地文件系统双模） | S3 兼容 API |
 
 ---
 
@@ -188,11 +189,13 @@ initializing (0%)
 
 | 角色 | 来源 | 存储位置 |
 |------|------|---------|
-| `source_video` | 用户上传 | `{storage}/tasks/{taskId}/{fileName}` |
-| `source_images` | 用户上传（N张） | `{storage}/tasks/{taskId}/{fileName}` |
-| `compressed_model` | compress 阶段产出 | `{storage}/tasks/{taskId}/compressed/model.spz` |
+| `source_video` | 用户上传 | MinIO: `tasks/{taskId}/{fileName}`；本地缓存: `{local}/tasks/{taskId}/` |
+| `source_images` | 用户上传（N张） | MinIO: `tasks/{taskId}/{fileName}`；本地缓存: `{local}/tasks/{taskId}/` |
+| `compressed_model` | compress 阶段产出 | MinIO: `tasks/{taskId}/compressed/model.spz`；本地缓存: `{local}/tasks/{taskId}/compressed/` |
 
-中间产物（frames/colmap/models）仅存磁盘，不入库。
+中间产物（frames/colmap/models）仅存本地磁盘，不入库也不上传 MinIO。
+上传文件同时写入本地缓存和 MinIO，流水线使用本地缓存；下载时 MinIO 返回预签名 URL（302 重定向），本地模式回退 FileResponse。
+本地模式使用 `LocalStorageClient` 替代 MinIO，通过 `USE_LOCAL_STORAGE=true` 切换。
 
 ---
 

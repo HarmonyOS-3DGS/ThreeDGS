@@ -109,40 +109,37 @@ def list_tasks(
     return TaskListResponse(items=items, total=len(items))
 
 
-@router.post("", response_model=CreateTaskRsp)
-async def create_task(
-    request: Request,
-    projectId: str = Header(..., max_length=20),
-    db: Session = Depends(get_database),
-    _auth: str = Depends(verify_app_auth),
-):
-    """创建3DGS任务。支持 JSON body 或 multipart/form-data."""
-    content_type = request.headers.get("content-type", "")
+def _validate_body(ec: str, sc: str, file_infos: list[FileInfo]) -> CreateTaskReq:
+    """Pydantic 校验并返回标准化 body。"""
+    try:
+        return CreateTaskReq(externalCode=ec, scene=sc, fileInfos=file_infos)
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail={"ret": {"code": 422, "msg": str(e)}})
 
+
+async def _parse_request_body(request: Request) -> tuple[str, str, list[FileInfo], dict[str, bytes]]:
+    """解析 JSON 或 multipart 请求体，返回 (externalCode, scene, fileInfos, file_contents)。"""
+    content_type = request.headers.get("content-type", "")
     file_contents: dict[str, bytes] = {}
 
     if "application/json" in content_type:
         data = await request.json()
-        try:
-            body = CreateTaskReq(**data)
-        except ValidationError as e:
-            raise HTTPException(status_code=422, detail={"ret": {"code": 422, "msg": str(e)}})
-        ec = body.externalCode
-        sc = body.scene
-        file_infos = body.fileInfos
-    elif "multipart/form-data" in content_type:
+        body = _validate_body(
+            data.get("externalCode", ""),
+            data.get("scene", ""),
+            [FileInfo(**m) for m in data.get("fileInfos", [])],
+        )
+        return body.externalCode, body.scene, body.fileInfos, file_contents
+
+    if "multipart/form-data" in content_type:
         form = await request.form()
         ec = form.get("externalCode") or ""
         sc = form.get("scene") or ""
-        if sc not in ("commodity", "indoor", "outdoor"):
-            raise HTTPException(status_code=400, detail={"ret": {"code": 400, "msg": "scene 参数不合法"}})
         fm = form.get("filesMeta") or "[]"
         if isinstance(fm, str):
             file_infos = [FileInfo(**m) for m in json.loads(fm)]
         else:
             file_infos = [FileInfo(**m) for m in json.loads(str(fm))]
-        if len(file_infos) < 1 or len(file_infos) > 3:
-            raise HTTPException(status_code=400, detail={"ret": {"code": 400, "msg": "fileInfos 数量应在 1-3 之间"}})
         upload_files = form.getlist("files")
         for f in upload_files:
             if hasattr(f, "filename") and f.filename:
@@ -152,12 +149,45 @@ async def create_task(
             if content:
                 fi.sha256 = hashlib.sha256(content).hexdigest()
                 fi.contentLength = len(content)
-    else:
-        raise HTTPException(status_code=400,
-            detail={"ret": {"code": 400, "msg": "Unsupported content-type, use application/json or multipart/form-data"}})
+        body = _validate_body(ec, sc, file_infos)
+        return body.externalCode, body.scene, body.fileInfos, file_contents
 
-    if not ec or not sc or not file_infos:
-        raise HTTPException(status_code=400, detail={"ret": {"code": 400, "msg": "缺少必要参数"}})
+    raise HTTPException(status_code=400,
+        detail={"ret": {"code": 400, "msg": "Unsupported content-type, use application/json or multipart/form-data"}})
+
+
+async def _save_task_files(db: Session, task_id: str, file_infos: list[FileInfo],
+                           file_contents: dict[str, bytes]) -> list[FileInfo]:
+    """保存上传文件并写入 TaskFile 记录，返回保存后的 FileInfo 列表。"""
+    result_files = []
+    for fi in file_infos:
+        role = fi.fileRole if fi.fileRole in VALID_FILE_ROLES else "source_video"
+        content = file_contents.get(fi.fileName, b"")
+        saved = await _save_file(task_id, fi, content=content, file_role=role)
+        task_file = TaskFile(
+            task_id=task_id,
+            fileName=saved.fileName,
+            sha256=saved.sha256,
+            contentLength=saved.contentLength,
+            fileUrl=saved.fileUrl,
+            fileRole=role,
+            mimeType=fi.mimeType,
+        )
+        db.add(task_file)
+        result_files.append(saved)
+    db.commit()
+    return result_files
+
+
+@router.post("", response_model=CreateTaskRsp)
+async def create_task(
+    request: Request,
+    projectId: str = Header(..., max_length=20),
+    db: Session = Depends(get_database),
+    _auth: str = Depends(verify_app_auth),
+):
+    """创建3DGS任务。支持 JSON body 或 multipart/form-data."""
+    ec, sc, file_infos, file_contents = await _parse_request_body(request)
 
     task = Task(
         project_id=projectId,
@@ -170,25 +200,7 @@ async def create_task(
     db.commit()
     db.refresh(task)
 
-    result_files = []
-    for fi in file_infos:
-        role = fi.fileRole if fi.fileRole in VALID_FILE_ROLES else "source_video"
-        content = file_contents.get(fi.fileName, b"")
-        saved = await _save_file(task.id, fi, content=content, file_role=role)
-        task_file = TaskFile(
-            task_id=task.id,
-            fileName=saved.fileName,
-            sha256=saved.sha256,
-            contentLength=saved.contentLength,
-            fileUrl=saved.fileUrl,
-            fileRole=role,
-            mimeType=fi.mimeType,
-        )
-        db.add(task_file)
-        result_files.append(saved)
-
-    db.commit()
-
+    result_files = await _save_task_files(db, task.id, file_infos, file_contents)
     return CreateTaskRsp(taskId=task.id, fileInfos=result_files)
 
 

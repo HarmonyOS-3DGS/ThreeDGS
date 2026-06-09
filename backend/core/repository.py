@@ -105,35 +105,41 @@ class TaskRepository:
             db.close()
 
     @staticmethod
-    def find_expired_pending(hours: int) -> list[Task]:
+    def cleanup_expired_pending(hours: int) -> list[str]:
+        """删除过期 pending 任务（DB + TaskFile 在同一事务中），返回已删除的 task_id 列表供磁盘清理。"""
         cutoff = datetime.utcnow() - timedelta(hours=hours)
         db = SessionLocal()
         try:
-            return db.query(Task).filter(
+            tasks = db.query(Task).filter(
                 Task.status == TaskStatus.PENDING.value,
                 Task.created_at < cutoff,
             ).all()
+            ids = [t.id for t in tasks]
+            for t in tasks:
+                db.query(TaskFile).filter(TaskFile.task_id == t.id).delete()
+                db.delete(t)
+            if tasks:
+                db.commit()
+            return ids
         finally:
             db.close()
 
     @staticmethod
-    def find_expired_completed(days: int) -> list[Task]:
+    def cleanup_expired_completed(days: int) -> list[str]:
+        """删除过期 completed 任务（DB + TaskFile 在同一事务中），返回已删除的 task_id 列表供磁盘清理。"""
         cutoff = datetime.utcnow() - timedelta(days=days)
         db = SessionLocal()
         try:
-            return db.query(Task).filter(
+            tasks = db.query(Task).filter(
                 Task.status == TaskStatus.COMPLETED.value,
                 Task.completed_at < cutoff,
             ).all()
-        finally:
-            db.close()
-
-    @staticmethod
-    def delete_task_cascade(task: Task) -> None:
-        db = SessionLocal()
-        try:
-            db.query(TaskFile).filter(TaskFile.task_id == task.id).delete()
-            db.query(Task).filter(Task.id == task.id).delete()
-            db.commit()
+            ids = [t.id for t in tasks]
+            for t in tasks:
+                db.query(TaskFile).filter(TaskFile.task_id == t.id).delete()
+                db.delete(t)
+            if tasks:
+                db.commit()
+            return ids
         finally:
             db.close()

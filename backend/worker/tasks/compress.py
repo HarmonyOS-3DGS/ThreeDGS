@@ -3,7 +3,7 @@ import os
 import time
 from backend.worker.celery_app import app
 from backend.worker.models.compressor import Compressor
-from backend.worker.tasks.shared import update_task, task_output_path
+from backend.worker.tasks.shared import task_output_path
 from backend.core.repository import TaskRepository
 
 
@@ -24,7 +24,7 @@ def _add_output_file(task_id: str, path: str, mime: str):
 def compress_result(self, prev_result: dict):
     """Stub: Simulate format compression and finalize task."""
     task_id = prev_result["task_id"]
-    update_task(task_id, "compressing", 85)
+    TaskRepository.update_progress(task_id, "compressing", 85)
     try:
         self.update_state(state="PROGRESS", meta={"current": 85, "total": 100, "stage": "compressing"})
     except Exception:
@@ -40,7 +40,7 @@ def compress_result(self, prev_result: dict):
         _add_output_file(task_id, spz_path, "application/octet-stream")
         _add_output_file(task_id, sog_path, "application/octet-stream")
 
-        update_task(task_id, "compressing", 95)
+        TaskRepository.update_progress(task_id, "compressing", 95)
         try:
             self.update_state(state="PROGRESS", meta={"current": 95, "total": 100, "stage": "compressing"})
         except Exception:
@@ -48,7 +48,7 @@ def compress_result(self, prev_result: dict):
 
         time.sleep(1)
 
-        update_task(task_id, "completed", 100, status="completed")
+        TaskRepository.update_progress(task_id, "completed", 100, status="completed")
         try:
             self.update_state(state="SUCCESS", meta={"current": 100, "total": 100, "stage": "completed"})
         except Exception:
@@ -56,5 +56,5 @@ def compress_result(self, prev_result: dict):
 
         return {**prev_result, "compressed_spz": spz_path, "compressed_sog": sog_path}
     except Exception as e:
-        update_task(task_id, "compressing", 95, status="failed", error=str(e))
+        TaskRepository.update_progress(task_id, "compressing", 95, status="failed", error=str(e))
         raise
