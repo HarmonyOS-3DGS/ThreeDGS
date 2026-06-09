@@ -1,0 +1,28 @@
+# ruff 配置文件 — Python 代码格式化和 lint 规则
+# 使用: ruff check .     (检查)
+#      ruff format .     (格式化)
+#      ruff check --fix .(自动修复)
+
+target-version = "py311"
+
+line-length = 100
+
+[lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes (unused imports, undefined names)
+    "I",   # isort (import sorting)
+    "UP",  # pyupgrade (modern Python syntax)
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+]
+
+[lint.isort]
+known-first-party = ["backend"]
+
+[format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false

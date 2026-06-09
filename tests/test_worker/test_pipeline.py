@@ -1,6 +1,7 @@
 """Tests for pipeline orchestration."""
-import pytest
+
 from unittest.mock import patch
+
 from backend.worker.tasks.pipeline import submit_training_pipeline
 
 

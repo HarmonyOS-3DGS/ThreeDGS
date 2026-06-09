@@ -1,16 +1,16 @@
-"""Preprocessor stub for frame extraction and COLMAP."""
+"""预处理 Stub — 帧提取与 COLMAP SfM 空壳实现。"""
+
 import os
-import shutil
 
 
 class Preprocessor:
-    """Stub preprocessor that simulates FFmpeg frame extraction and COLMAP SfM."""
+    """模拟 FFmpeg 帧提取 + COLMAP SfM 的 Stub 预处理器。"""
 
     @staticmethod
     def extract_frames(video_path: str, output_dir: str, fps: int = 5) -> str:
-        """Simulate FFmpeg frame extraction by copying a sample image."""
+        """模拟 FFmpeg 帧提取，生成 dummy 帧文件。"""
         os.makedirs(output_dir, exist_ok=True)
-        # Stub: create dummy frame files
+        # Stub: 生成 dummy 帧文件
         for i in range(10):
             dummy = os.path.join(output_dir, f"frame_{i:04d}.jpg")
             with open(dummy, "wb") as f:
@@ -19,7 +19,7 @@ class Preprocessor:
 
     @staticmethod
     def run_colmap(image_dir: str, output_dir: str) -> str:
-        """Simulate COLMAP SfM by creating dummy output files."""
+        """模拟 COLMAP SfM，生成 dummy 输出文件。"""
         os.makedirs(output_dir, exist_ok=True)
         sparse_dir = os.path.join(output_dir, "sparse", "0")
         os.makedirs(sparse_dir, exist_ok=True)

@@ -1,5 +1,5 @@
-"""Local filesystem storage fallback (when MinIO is unavailable)."""
-import os
+"""本地文件系统存储实现（MinIO 不可用时的回退方案）。"""
+
 import shutil
 from pathlib import Path
 
@@ -7,7 +7,7 @@ from backend.core.config import settings
 
 
 class LocalStorageClient:
-    """Drop-in replacement for MinIO StorageClient using local filesystem."""
+    """MinIO StorageClient 的本地文件系统替代实现。"""
 
     def __init__(self):
         self.base_dir = Path(getattr(settings, "local_storage_dir", "./local_storage"))

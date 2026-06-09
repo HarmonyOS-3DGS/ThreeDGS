@@ -1,5 +1,4 @@
 """Tests for task creation endpoint."""
-import pytest
 
 
 class TestCreateTask:
@@ -7,7 +6,12 @@ class TestCreateTask:
         return {
             "externalCode": "EXT-001",
             "fileInfos": [
-                {"fileName": "test.mp4", "sha256": "abc", "contentLength": 16, "fileUrl": "/tmp/test/test.mp4"}
+                {
+                    "fileName": "test.mp4",
+                    "sha256": "abc",
+                    "contentLength": 16,
+                    "fileUrl": "/tmp/test/test.mp4",
+                }
             ],
             "scene": "indoor",
         }

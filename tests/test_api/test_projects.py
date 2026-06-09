@@ -1,5 +1,4 @@
 """Tests for task query and start endpoints."""
-import pytest
 
 from backend.core.database import TaskFile
 
@@ -9,7 +8,12 @@ class TestTasks:
         return {
             "externalCode": "T-001",
             "fileInfos": [
-                {"fileName": "test.mp4", "sha256": "abc", "contentLength": 4, "fileUrl": "/tmp/test/test.mp4"}
+                {
+                    "fileName": "test.mp4",
+                    "sha256": "abc",
+                    "contentLength": 4,
+                    "fileUrl": "/tmp/test/test.mp4",
+                }
             ],
             "scene": "indoor",
         }

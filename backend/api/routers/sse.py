@@ -1,11 +1,23 @@
-"""Server-Sent Events for real-time task progress."""
+"""SSE 实时进度推送端点。
+
+设计要点：
+  - 使用 asyncio.to_thread 将同步 DB 查询放入线程池，避免阻塞事件循环
+  - 每次轮询创建独立的 SessionLocal，用完即关，不持有长连接
+  - 数据以 dict 形式跨越 thread/session 边界，避免 detached ORM 对象
+  - 2 秒间隔 + "completed"/"failed" 时自动停止
+
+为何不用 AsyncSession：MVP 阶段其他端点都是同步 Session，部分异步代价大。
+asyncio.to_thread 方案对现有架构改动最小，且与 SQLite/PostgreSQL 均兼容。
+"""
+
 import asyncio
 import json
-from fastapi import APIRouter, Depends, HTTPException, Header, Query
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sse_starlette.sse import EventSourceResponse
 
-from backend.core.database import SessionLocal, Task
 from backend.core.auth import _verify_auth_key
+from backend.core.database import SessionLocal, Task
 
 router = APIRouter(prefix="/tasks", tags=["sse"])
 
@@ -20,17 +32,20 @@ def _verify_sse_auth(
     _verify_auth_key(token)
     pid = projectId_h or projectId_q
     if not pid:
-        raise HTTPException(status_code=422, detail={"ret": {"code": 422, "msg": "Missing projectId"}})
+        raise HTTPException(
+            status_code=422, detail={"ret": {"code": 422, "msg": "Missing projectId"}}
+        )
     return pid
 
 
 def _fetch_task_status(task_id: str, project_id: str) -> dict | None:
-    """同步查询任务状态，在 thread pool 中执行，不阻塞事件循环。"""
+    """同步查询 + 返回纯 dict。
+
+    返回 dict 而非 ORM 对象：调用方在另一个线程，ORM 对象跨 session 不可用。
+    """
     db = SessionLocal()
     try:
-        task = db.query(Task).filter(
-            Task.id == task_id, Task.project_id == project_id
-        ).first()
+        task = db.query(Task).filter(Task.id == task_id, Task.project_id == project_id).first()
         if not task:
             return None
         return {
@@ -49,7 +64,10 @@ async def task_event_generator(task_id: str, project_id: str):
         data = await asyncio.to_thread(_fetch_task_status, task_id, project_id)
 
         if data is None:
-            yield {"event": "error", "data": json.dumps({"ret": {"code": 404, "msg": "Task not found"}})}
+            yield {
+                "event": "error",
+                "data": json.dumps({"ret": {"code": 404, "msg": "Task not found"}}),
+            }
             break
 
         yield {"event": "status", "data": json.dumps(data)}

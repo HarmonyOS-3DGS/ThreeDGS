@@ -1,17 +1,18 @@
-"""Trainer stub for 3D Gaussian Splatting."""
+"""训练 Stub — 3D Gaussian Splatting 训练空壳实现。"""
+
 import os
 
 
 class Trainer:
-    """Stub trainer that simulates gsplat/Nerfstudio training."""
+    """模拟 gsplat/Nerfstudio 训练的 Stub 训练器。"""
 
     @staticmethod
     def train(colmap_dir: str, output_dir: str, iterations: int = 30000) -> str:
-        """Simulate training by generating a minimal PLY file."""
+        """模拟 3DGS 训练，生成最小合法 PLY 文件。"""
         os.makedirs(output_dir, exist_ok=True)
         model_path = os.path.join(output_dir, "model.ply")
 
-        # Write a minimal valid PLY header (no actual gaussian data)
+        # 写入最小合法 PLY 头（不含实际高斯数据）
         with open(model_path, "w") as f:
             f.write(
                 "ply\n"

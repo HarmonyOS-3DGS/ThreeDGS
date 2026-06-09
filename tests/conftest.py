@@ -1,8 +1,9 @@
 """pytest fixtures for the 3DGS platform."""
+
 import os
 
 # 必须在导入任何 backend 模块前设置环境变量
-#（backend.core.database 在导入时会基于 settings 创建引擎）
+# （backend.core.database 在导入时会基于 settings 创建引擎）
 os.environ.setdefault("DATABASE_URL", "sqlite:///./test.db")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 os.environ.setdefault("CELERY_BROKER_URL", "memory://")
@@ -20,9 +21,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from backend.core.database import Base, get_db, init_db
 from backend.api.main import app
-
+from backend.core.database import Base, get_db, init_db
 
 # Use SQLite in-memory for tests
 TEST_DATABASE_URL = "sqlite:///./test.db"

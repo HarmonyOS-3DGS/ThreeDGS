@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """一键本地启动脚本（API + Worker 同进程线程模式，memory broker 共享）。"""
+
 import os
 import sys
-import time
 import threading
+import time
 
 # 强制使用本地配置
 os.environ.setdefault("DATABASE_URL", "sqlite:///./3dgs.db")
@@ -19,13 +20,14 @@ os.makedirs("uploads", exist_ok=True)
 
 # 初始化数据库
 print("[1/3] 初始化数据库...")
-from backend.core.database import init_db
+from backend.core.database import init_db  # noqa: E402
+
 init_db()
 print("  数据库初始化完成")
 
 # 启动 Celery Worker 线程
 print("[2/3] 启动 Celery Worker...")
-from backend.worker.celery_app import app as celery_app
+from backend.worker.celery_app import app as celery_app  # noqa: E402
 
 
 def run_worker():
@@ -43,7 +45,8 @@ def run_worker():
 
 def run_cleanup_scheduler():
     """本地模式下用简单线程替代 Celery Beat，定期清理过期任务。"""
-    from backend.worker.tasks.cleanup import cleanup_pending_tasks, cleanup_completed_tasks
+    from backend.worker.tasks.cleanup import cleanup_completed_tasks, cleanup_pending_tasks
+
     while True:
         time.sleep(1800)  # 30 分钟
         try:
@@ -65,8 +68,9 @@ print("  Worker 已启动")
 
 # 启动 FastAPI 服务
 print("[3/3] 启动 FastAPI 服务...")
-import uvicorn
-from backend.api.main import app as fastapi_app
+import uvicorn  # noqa: E402
+
+from backend.api.main import app as fastapi_app  # noqa: E402
 
 api_server = None
 
@@ -92,6 +96,7 @@ ready = False
 for _ in range(30):
     try:
         import urllib.request
+
         with urllib.request.urlopen("http://127.0.0.1:8000/docs", timeout=1) as r:
             if r.status == 200:
                 ready = True

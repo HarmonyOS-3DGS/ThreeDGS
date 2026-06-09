@@ -1,10 +1,12 @@
-"""Stage 4: Compression and finalization task (stub)."""
+"""Stage 4: 压缩与完成任务（Stub）。"""
+
 import os
 import time
+
+from backend.core.repository import TaskRepository
 from backend.worker.celery_app import app
 from backend.worker.models.compressor import Compressor
 from backend.worker.tasks.shared import task_output_path
-from backend.core.repository import TaskRepository
 
 
 def _add_output_file(task_id: str, path: str, mime: str):
@@ -12,6 +14,7 @@ def _add_output_file(task_id: str, path: str, mime: str):
     object_name = f"tasks/{task_id}/compressed/{os.path.basename(path)}"
     try:
         from backend.core.storage import storage
+
         storage.upload_file(object_name, path)
         file_url = object_name
     except Exception:
@@ -22,11 +25,14 @@ def _add_output_file(task_id: str, path: str, mime: str):
 
 @app.task(bind=True, time_limit=600)
 def compress_result(self, prev_result: dict):
-    """Stub: Simulate format compression and finalize task."""
+    """Stub: 模拟格式压缩并完成任务。"""
     task_id = prev_result["task_id"]
     TaskRepository.update_progress(task_id, "compressing", 85)
     try:
-        self.update_state(state="PROGRESS", meta={"current": 85, "total": 100, "stage": "compressing"})
+        self.update_state(
+            state="PROGRESS",
+            meta={"current": 85, "total": 100, "stage": "compressing"},
+        )
     except Exception:
         pass
 
@@ -42,7 +48,10 @@ def compress_result(self, prev_result: dict):
 
         TaskRepository.update_progress(task_id, "compressing", 95)
         try:
-            self.update_state(state="PROGRESS", meta={"current": 95, "total": 100, "stage": "compressing"})
+            self.update_state(
+                state="PROGRESS",
+                meta={"current": 95, "total": 100, "stage": "compressing"},
+            )
         except Exception:
             pass
 
@@ -50,7 +59,10 @@ def compress_result(self, prev_result: dict):
 
         TaskRepository.update_progress(task_id, "completed", 100, status="completed")
         try:
-            self.update_state(state="SUCCESS", meta={"current": 100, "total": 100, "stage": "completed"})
+            self.update_state(
+                state="SUCCESS",
+                meta={"current": 100, "total": 100, "stage": "completed"},
+            )
         except Exception:
             pass
 

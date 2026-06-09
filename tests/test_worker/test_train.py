@@ -1,6 +1,7 @@
 """Tests for train_gs task."""
-import pytest
+
 from unittest.mock import patch
+
 from backend.worker.tasks.train_gs import train_gaussian_splatting
 
 
@@ -15,7 +16,9 @@ class TestTrain:
         assert "test-id" in result["model_path"]
 
     def test_train_generates_ply(self):
-        import tempfile, os
+        import os
+        import tempfile
+
         with tempfile.TemporaryDirectory() as td:
             with patch("backend.worker.tasks.train_gs.time.sleep"):
                 result = train_gaussian_splatting.run(

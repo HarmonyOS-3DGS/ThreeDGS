@@ -1,11 +1,9 @@
 """Tests for cleanup tasks."""
-import os
-import tempfile
-from datetime import datetime, timedelta
-from unittest.mock import patch
 
-from backend.worker.tasks.cleanup import cleanup_pending_tasks, cleanup_completed_tasks
-from backend.core.database import SessionLocal, Task, TaskStatus
+from datetime import datetime, timedelta
+
+from backend.core.database import Task, TaskStatus
+from backend.worker.tasks.cleanup import cleanup_completed_tasks, cleanup_pending_tasks
 
 
 class TestCleanupPending:

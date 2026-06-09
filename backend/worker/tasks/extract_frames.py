@@ -1,10 +1,11 @@
-"""Stage 1: Frame extraction task (stub)."""
+"""Stage 1: 帧提取任务（Stub）。"""
+
 import time
-import os
+
+from backend.core.repository import TaskRepository
 from backend.worker.celery_app import app
 from backend.worker.models.preprocessor import Preprocessor
 from backend.worker.tasks.shared import task_output_path
-from backend.core.repository import TaskRepository
 
 
 @app.task(bind=True, max_retries=3, default_retry_delay=10)
@@ -12,7 +13,10 @@ def extract_frames(self, task_id: str, video_path: str, fps: int = 5):
     """Stub: Simulate FFmpeg frame extraction."""
     TaskRepository.update_progress(task_id, "extracting", 10)
     try:
-        self.update_state(state="PROGRESS", meta={"current": 10, "total": 100, "stage": "extracting"})
+        self.update_state(
+            state="PROGRESS",
+            meta={"current": 10, "total": 100, "stage": "extracting"},
+        )
     except Exception:
         pass
 
@@ -24,7 +28,10 @@ def extract_frames(self, task_id: str, video_path: str, fps: int = 5):
 
         TaskRepository.update_progress(task_id, "extracting", 25)
         try:
-            self.update_state(state="PROGRESS", meta={"current": 25, "total": 100, "stage": "extracting"})
+            self.update_state(
+                state="PROGRESS",
+                meta={"current": 25, "total": 100, "stage": "extracting"},
+            )
         except Exception:
             pass
 

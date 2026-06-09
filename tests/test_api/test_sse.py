@@ -1,5 +1,4 @@
 """Tests for SSE endpoint."""
-import pytest
 
 from backend.core.database import Task
 
@@ -9,7 +8,12 @@ class TestSSE:
         body = {
             "externalCode": "SSE-TEST",
             "fileInfos": [
-                {"fileName": "t.mp4", "sha256": "abc", "contentLength": 4, "fileUrl": "/tmp/test/t.mp4"}
+                {
+                    "fileName": "t.mp4",
+                    "sha256": "abc",
+                    "contentLength": 4,
+                    "fileUrl": "/tmp/test/t.mp4",
+                }
             ],
             "scene": "indoor",
         }

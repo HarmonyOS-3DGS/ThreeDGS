@@ -1,30 +1,32 @@
-"""Task management routes: create, list, start, query."""
+"""任务管理路由：创建、列表、启动、查询、下载。"""
+
 import hashlib
 import json
 import os
-import shutil
-from datetime import datetime
 
-import aiofiles.os
 import aiofiles
-from aiofiles import os as aio_os
-
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, UploadFile
+import aiofiles.os
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from backend.core.database import Task, TaskFile, TaskStatus, TaskStage
-from backend.api.schemas.task import (
-    CreateTaskReq, CreateTaskRsp, FileInfo, GetTaskRsp,
-    StartTaskRsp, TaskListResponse, VALID_FILE_ROLES,
-)
 from backend.api.deps import get_database
+from backend.api.schemas.task import (
+    VALID_FILE_ROLES,
+    CreateTaskReq,
+    CreateTaskRsp,
+    FileInfo,
+    GetTaskRsp,
+    StartTaskRsp,
+    TaskListResponse,
+)
 from backend.core.auth import verify_app_auth, verify_project_auth
 from backend.core.config import TASK_OUTPUT_DIR
-from backend.core.task_publisher import submit_pipeline
-from backend.core.storage import storage
+from backend.core.database import Task, TaskFile, TaskStage, TaskStatus
 from backend.core.file_utils import detect_mime
+from backend.core.storage import storage
+from backend.core.task_publisher import submit_pipeline
 
 router = APIRouter(prefix="/tasks", tags=["taskManagement"])
 
@@ -34,7 +36,9 @@ def _safe_filename(filename: str) -> str:
     return os.path.basename(filename)
 
 
-async def _save_file(task_id: str, fi: FileInfo, content: bytes = b"", file_role: str = "source_video") -> FileInfo:
+async def _save_file(
+    task_id: str, fi: FileInfo, content: bytes = b"", file_role: str = "source_video"
+) -> FileInfo:
     safe_name = _safe_filename(fi.fileName)
     task_dir = os.path.join(TASK_OUTPUT_DIR, str(task_id))
     await aiofiles.os.makedirs(task_dir, exist_ok=True)
@@ -56,11 +60,25 @@ async def _save_file(task_id: str, fi: FileInfo, content: bytes = b"", file_role
         # 魔数校验: source_video 必须是视频, source_images 必须是图片
         if detected_mime:
             if file_role == "source_video" and not detected_mime.startswith("video/"):
-                raise HTTPException(status_code=400, detail={
-                    "ret": {"code": 400, "msg": f"文件 {safe_name} 声明为视频，但实际类型为 {detected_mime}"}})
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "ret": {
+                            "code": 400,
+                            "msg": f"文件 {safe_name} 声明为视频，但实际类型为 {detected_mime}",
+                        }
+                    },
+                )
             if file_role == "source_images" and not detected_mime.startswith("image/"):
-                raise HTTPException(status_code=400, detail={
-                    "ret": {"code": 400, "msg": f"文件 {safe_name} 声明为图片，但实际类型为 {detected_mime}"}})
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "ret": {
+                            "code": 400,
+                            "msg": f"文件 {safe_name} 声明为图片，但实际类型为 {detected_mime}",
+                        }
+                    },
+                )
         async with aiofiles.open(local_path, "wb") as f:
             await f.write(content)
 
@@ -88,10 +106,7 @@ def list_tasks(
 ):
     """列出指定项目的所有任务."""
     tasks = (
-        db.query(Task)
-        .filter(Task.project_id == projectId)
-        .order_by(Task.created_at.desc())
-        .all()
+        db.query(Task).filter(Task.project_id == projectId).order_by(Task.created_at.desc()).all()
     )
     items = [
         GetTaskRsp(
@@ -117,7 +132,9 @@ def _validate_body(ec: str, sc: str, file_infos: list[FileInfo]) -> CreateTaskRe
         raise HTTPException(status_code=422, detail={"ret": {"code": 422, "msg": str(e)}})
 
 
-async def _parse_request_body(request: Request) -> tuple[str, str, list[FileInfo], dict[str, bytes]]:
+async def _parse_request_body(
+    request: Request,
+) -> tuple[str, str, list[FileInfo], dict[str, bytes]]:
     """解析 JSON 或 multipart 请求体，返回 (externalCode, scene, fileInfos, file_contents)。"""
     content_type = request.headers.get("content-type", "")
     file_contents: dict[str, bytes] = {}
@@ -152,12 +169,23 @@ async def _parse_request_body(request: Request) -> tuple[str, str, list[FileInfo
         body = _validate_body(ec, sc, file_infos)
         return body.externalCode, body.scene, body.fileInfos, file_contents
 
-    raise HTTPException(status_code=400,
-        detail={"ret": {"code": 400, "msg": "Unsupported content-type, use application/json or multipart/form-data"}})
+    raise HTTPException(
+        status_code=400,
+        detail={
+            "ret": {
+                "code": 400,
+                "msg": "Unsupported content-type, use application/json or multipart/form-data",
+            }
+        },
+    )
 
 
-async def _save_task_files(db: Session, task_id: str, file_infos: list[FileInfo],
-                           file_contents: dict[str, bytes]) -> list[FileInfo]:
+async def _save_task_files(
+    db: Session,
+    task_id: str,
+    file_infos: list[FileInfo],
+    file_contents: dict[str, bytes],
+) -> list[FileInfo]:
     """保存上传文件并写入 TaskFile 记录，返回保存后的 FileInfo 列表。"""
     result_files = []
     for fi in file_infos:
@@ -248,7 +276,9 @@ def start_task(
         task.status = TaskStatus.FAILED.value
         task.error_message = "没有找到可处理的视频文件"
         db.commit()
-        raise HTTPException(status_code=400, detail={"ret": {"code": 400, "msg": "没有找到可处理的视频文件"}})
+        raise HTTPException(
+            status_code=400, detail={"ret": {"code": 400, "msg": "没有找到可处理的视频文件"}}
+        )
 
     return StartTaskRsp(remainingTime=15)
 
@@ -266,19 +296,25 @@ def query_task(
         raise HTTPException(status_code=404, detail={"ret": {"code": 404, "msg": "Task not found"}})
 
     download_infos = []
-    output_files = db.query(TaskFile).filter(
-        TaskFile.task_id == task.id,
-        TaskFile.fileRole == "compressed_model",
-    ).all()
+    output_files = (
+        db.query(TaskFile)
+        .filter(
+            TaskFile.task_id == task.id,
+            TaskFile.fileRole == "compressed_model",
+        )
+        .all()
+    )
     for f in output_files:
-        download_infos.append(FileInfo(
-            fileName=f.fileName,
-            sha256=f.sha256,
-            contentLength=f.contentLength,
-            fileUrl=f.fileUrl,
-            fileRole=f.fileRole,
-            mimeType=f.mimeType,
-        ))
+        download_infos.append(
+            FileInfo(
+                fileName=f.fileName,
+                sha256=f.sha256,
+                contentLength=f.contentLength,
+                fileUrl=f.fileUrl,
+                fileRole=f.fileRole,
+                mimeType=f.mimeType,
+            )
+        )
 
     return GetTaskRsp(
         taskId=task.id,
@@ -304,10 +340,13 @@ def download_file(
 ):
     """下载任务输出文件."""
     from backend.core.auth import _verify_auth_key
+
     _verify_auth_key(auth_h or auth_q)
     pid = projectId_h or projectId_q
     if not pid:
-        raise HTTPException(status_code=422, detail={"ret": {"code": 422, "msg": "Missing projectId"}})
+        raise HTTPException(
+            status_code=422, detail={"ret": {"code": 422, "msg": "Missing projectId"}}
+        )
 
     task = db.query(Task).filter(Task.id == task_id, Task.project_id == pid).first()
     if not task:
@@ -315,11 +354,15 @@ def download_file(
 
     safe_name = _safe_filename(file)
     # 从 DB 查找 compressed_model 记录
-    task_file = db.query(TaskFile).filter(
-        TaskFile.task_id == task_id,
-        TaskFile.fileRole == "compressed_model",
-        TaskFile.fileName == safe_name,
-    ).first()
+    task_file = (
+        db.query(TaskFile)
+        .filter(
+            TaskFile.task_id == task_id,
+            TaskFile.fileRole == "compressed_model",
+            TaskFile.fileName == safe_name,
+        )
+        .first()
+    )
     if task_file:
         try:
             url = storage.get_presigned_url(task_file.fileUrl, expires=3600)

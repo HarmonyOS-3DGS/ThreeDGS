@@ -3,11 +3,12 @@ Real integration test: starts API + Worker in same process (threads),
 sends real HTTP requests.
 Usage: python scripts/integration_test.py
 """
+
 import json
 import os
 import sys
-import time
 import threading
+import time
 from pathlib import Path
 
 # Ensure project root on path
@@ -44,9 +45,9 @@ def wait_for_service(url: str, timeout: int = 30) -> bool:
 
 
 def print_step(step: str):
-    print(f"\n{'='*50}")
+    print(f"\n{'=' * 50}")
     print(f"  {step}")
-    print(f"{'='*50}")
+    print(f"{'=' * 50}")
 
 
 def run_test():
@@ -57,11 +58,13 @@ def run_test():
     for p in ["integration_test.db", "integration_test_storage"]:
         if os.path.exists(p):
             import shutil
+
             shutil.rmtree(p) if os.path.isdir(p) else os.remove(p)
 
     # Initialize DB
     print_step("1. Initialize database")
     from backend.core.database import init_db
+
     init_db()
     print("OK")
 
@@ -87,15 +90,14 @@ def run_test():
     # Start API server
     print_step("3. Start FastAPI server")
     import uvicorn
+
     from backend.api.main import app as fastapi_app
 
     api_server = None
 
     def run_api():
         nonlocal api_server
-        config = uvicorn.Config(
-            fastapi_app, host="127.0.0.1", port=API_PORT, log_level="warning"
-        )
+        config = uvicorn.Config(fastapi_app, host="127.0.0.1", port=API_PORT, log_level="warning")
         api_server = uvicorn.Server(config)
         api_server.run()
 
@@ -122,7 +124,9 @@ def run_test():
 
     # Test 2: Create task
     print_step("Test 2: Create task")
-    files_meta = json.dumps([{"fileName": "test.mp4", "sha256": "abc", "contentLength": 26, "fileUrl": ""}])
+    files_meta = json.dumps(
+        [{"fileName": "test.mp4", "sha256": "abc", "contentLength": 26, "fileUrl": ""}]
+    )
     import tempfile
 
     with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
@@ -145,7 +149,7 @@ def run_test():
             print(f"   [PASS] PASS - Created task {task_id}")
             passed += 1
         else:
-            print(f"   [FAIL] FAIL - Create task failed")
+            print("   [FAIL] FAIL - Create task failed")
             failed += 1
             task_id = None
     finally:
@@ -181,7 +185,9 @@ def run_test():
     # Test 5: SSE events (short timeout, just verify endpoint works)
     print_step("Test 5: SSE events endpoint")
     try:
-        sse_url = f"{BASE_URL}/tasks/{task_id}/events?projectId={PROJECT_ID}&Authorization={API_KEY}"
+        sse_url = (
+            f"{BASE_URL}/tasks/{task_id}/events?projectId={PROJECT_ID}&Authorization={API_KEY}"
+        )
         with httpx.stream("GET", sse_url, timeout=3) as stream:
             chunk = ""
             for data in stream.iter_text():
@@ -189,10 +195,10 @@ def run_test():
                 if "event:" in chunk:
                     break
         if "event:" in chunk or "status" in chunk:
-            print(f"   [PASS] PASS - SSE stream received data")
+            print("   [PASS] PASS - SSE stream received data")
             passed += 1
         else:
-            print(f"   [WARN]  SKIP - SSE stream empty")
+            print("   [WARN]  SKIP - SSE stream empty")
             passed += 1
     except Exception as e:
         print(f"   [WARN]  SKIP - SSE timeout: {e}")
@@ -208,13 +214,13 @@ def run_test():
         final_status = data["status"]
         progress = data["progress"]
         stage = data["currentStage"]
-        print(f"   [{i+1}s] status={final_status}, stage={stage}, progress={progress}%")
+        print(f"   [{i + 1}s] status={final_status}, stage={stage}, progress={progress}%")
         if final_status in ("completed", "failed"):
             break
         time.sleep(1)
 
     if final_status == "completed":
-        print(f"   [PASS] PASS - Pipeline completed successfully")
+        print("   [PASS] PASS - Pipeline completed successfully")
         passed += 1
     else:
         print(f"   [FAIL] FAIL - Final status: {final_status}")
@@ -243,6 +249,7 @@ def run_test():
     for p in ["integration_test.db", "integration_test_storage"]:
         if os.path.exists(p):
             import shutil
+
             shutil.rmtree(p) if os.path.isdir(p) else os.remove(p)
 
     # Summary

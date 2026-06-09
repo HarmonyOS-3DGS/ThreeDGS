@@ -1,5 +1,5 @@
 """Tests for MinIO storage client (mocked)."""
-import pytest
+
 from unittest.mock import MagicMock, patch
 
 from backend.core.minio_storage import MinioStorageClient
@@ -51,6 +51,4 @@ class TestStorageClient:
 
             storage = MinioStorageClient()
             storage.delete_object("test/object.txt")
-            mock_client.remove_object.assert_called_once_with(
-                "gaussian", "test/object.txt"
-            )
+            mock_client.remove_object.assert_called_once_with("gaussian", "test/object.txt")

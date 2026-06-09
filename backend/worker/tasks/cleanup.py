@@ -1,10 +1,11 @@
 """Periodic task cleanup for expired tasks and model files."""
+
 import os
 import shutil
 
-from backend.worker.celery_app import app
-from backend.core.config import settings, TASK_OUTPUT_DIR
+from backend.core.config import TASK_OUTPUT_DIR, settings
 from backend.core.repository import TaskRepository
+from backend.worker.celery_app import app
 
 
 @app.task

@@ -1,10 +1,9 @@
 """Real HTTP integration test - API + Worker in same process."""
-import json
+
 import os
 import sys
-import time
 import threading
-import tempfile
+import time
 from pathlib import Path
 
 # Env setup
@@ -25,6 +24,7 @@ KEY = "test-key-123"
 
 def cleanup():
     import shutil
+
     for p in ["realtest.db", "realtest_storage", "realtest.db-journal"]:
         if os.path.exists(p):
             for _ in range(10):
@@ -38,19 +38,21 @@ def cleanup():
 cleanup()
 
 # Init DB
-from backend.core.database import init_db
+from backend.core.database import init_db  # noqa: E402
+
 init_db()
 print("[1/5] DB initialized")
 
 # Start Celery worker thread (shares memory broker with API)
 print("[2/5] Starting Celery worker thread")
-from backend.worker.celery_app import app as celery_app
+from backend.worker.celery_app import app as celery_app  # noqa: E402
 
 worker_running = True
 
+
 def run_worker():
     # Start a worker that consumes from the in-memory broker
-    with celery_app.connection() as conn:
+    with celery_app.connection():
         worker = celery_app.Worker(
             hostname="test_worker@localhost",
             pool="solo",
@@ -68,11 +70,13 @@ print("Worker thread started")
 
 # Start API in background thread
 print("[3/5] Starting API server")
-import uvicorn
-from backend.api.main import app as fastapi_app
+import uvicorn  # noqa: E402
+
+from backend.api.main import app as fastapi_app  # noqa: E402
 
 api_running = True
 api_server = None
+
 
 def run_api():
     global api_server
@@ -85,7 +89,8 @@ api_thread = threading.Thread(target=run_api, daemon=True)
 api_thread.start()
 
 # Wait for API
-import httpx
+import httpx  # noqa: E402
+
 ready = False
 for _ in range(30):
     try:
@@ -146,7 +151,9 @@ r = httpx.post(
     headers={"Authorization": KEY, "projectId": "proj-test"},
     timeout=5,
 )
-check("Start task", r.status_code == 200 and r.json()["ret"]["code"] == 0, f"status={r.status_code}")
+check(
+    "Start task", r.status_code == 200 and r.json()["ret"]["code"] == 0, f"status={r.status_code}"
+)
 
 # Test 3: Query task
 r = httpx.get(
@@ -154,7 +161,11 @@ r = httpx.get(
     headers={"Authorization": KEY, "projectId": "proj-test"},
     timeout=5,
 )
-check("Query task", r.status_code == 200 and r.json()["status"] == "processing", f"status={r.status_code}")
+check(
+    "Query task",
+    r.status_code == 200 and r.json()["status"] == "processing",
+    f"status={r.status_code}",
+)
 
 # Test 4: Wait for completion
 print("\n  Waiting for pipeline completion (~15s)...")
@@ -167,7 +178,9 @@ for i in range(40):
     )
     data = r.json()
     status = data["status"]
-    print(f"    t={i+1}s status={status:10} stage={data['currentStage']:15} progress={data['progress']:3}%")
+    print(
+        f"    t={i + 1}s status={status:10} stage={data['currentStage']:15} progress={data['progress']:3}%"
+    )
     if status in ("completed", "failed"):
         break
     time.sleep(1)
@@ -194,9 +207,9 @@ time.sleep(1)
 
 cleanup()
 
-print(f"\n{'='*40}")
+print(f"\n{'=' * 40}")
 print(f"Results: {passed} passed, {failed} failed")
-print(f"{'='*40}")
+print(f"{'=' * 40}")
 if failed == 0:
     print("All real integration tests passed!")
 else:

@@ -1,4 +1,5 @@
 """Shared utilities for Celery tasks."""
+
 import os
 
 from backend.core.config import TASK_OUTPUT_DIR

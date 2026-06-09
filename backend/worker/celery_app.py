@@ -1,5 +1,7 @@
-"""Celery application configuration."""
+"""Celery 应用配置与 Beat 定时任务调度。"""
+
 from celery import Celery
+
 from backend.core.config import settings
 
 app = Celery(
@@ -28,11 +30,11 @@ app.conf.update(
     beat_schedule={
         "cleanup-pending-tasks": {
             "task": "backend.worker.tasks.cleanup.cleanup_pending_tasks",
-            "schedule": 1800.0,  # 30 minutes
+            "schedule": 1800.0,  # 30 分钟
         },
         "cleanup-completed-tasks": {
             "task": "backend.worker.tasks.cleanup.cleanup_completed_tasks",
-            "schedule": 3600.0,  # 1 hour
+            "schedule": 3600.0,  # 1 小时
         },
     },
 )

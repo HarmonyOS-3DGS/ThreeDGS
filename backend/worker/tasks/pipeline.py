@@ -1,16 +1,17 @@
-"""Celery pipeline orchestration for 3DGS training."""
+"""3DGS 训练流水线编排（Celery 四阶段链）。"""
+
 from celery import chain
 
 from backend.core.config import settings
-from backend.worker.tasks.extract_frames import extract_frames
-from backend.worker.tasks.colmap_sfm import run_colmap
-from backend.worker.tasks.train_gs import train_gaussian_splatting
-from backend.worker.tasks.compress import compress_result
 from backend.core.task_publisher import register_pipeline_submitter
+from backend.worker.tasks.colmap_sfm import run_colmap
+from backend.worker.tasks.compress import compress_result
+from backend.worker.tasks.extract_frames import extract_frames
+from backend.worker.tasks.train_gs import train_gaussian_splatting
 
 
 def submit_training_pipeline(task_id: str, video_path: str):
-    """Submit the 4-stage 3DGS training pipeline as a Celery task chain."""
+    """提交 4 阶段 3DGS 训练流水线。"""
     pipeline = chain(
         extract_frames.s(task_id, video_path, fps=settings.default_fps),
         run_colmap.s(),

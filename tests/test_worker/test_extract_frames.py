@@ -1,6 +1,7 @@
 """Tests for extract_frames task."""
-import pytest
+
 from unittest.mock import patch
+
 from backend.worker.tasks.extract_frames import extract_frames
 
 
@@ -14,7 +15,9 @@ class TestExtractFrames:
 
     def test_extract_frames_updates_progress(self):
         with patch("backend.worker.tasks.extract_frames.time.sleep"):
-            with patch("backend.worker.tasks.extract_frames.TaskRepository.update_progress") as mock_update:
+            with patch(
+                "backend.worker.tasks.extract_frames.TaskRepository.update_progress"
+            ) as mock_update:
                 extract_frames.run("test-id", "/tmp/test.mp4")
                 assert mock_update.call_count >= 2
                 # 第一次调用: stage=extracting, progress=10

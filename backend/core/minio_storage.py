@@ -1,4 +1,5 @@
-"""MinIO storage client wrapper."""
+"""MinIO 对象存储客户端封装。"""
+
 from io import BytesIO
 
 from minio import Minio
@@ -8,7 +9,7 @@ from backend.core.config import settings
 
 
 class MinioStorageClient:
-    """Wrapper around MinIO client for object storage operations."""
+    """MinIO 客户端封装，提供对象存储的增删查操作。"""
 
     def __init__(self):
         self._client = None
@@ -27,37 +28,35 @@ class MinioStorageClient:
         return self._client
 
     def _ensure_bucket(self):
-        """Ensure the target bucket exists."""
+        """确保目标存储桶存在。"""
         if not self.client.bucket_exists(self.bucket):
             self.client.make_bucket(self.bucket)
 
     def upload_file(self, object_name: str, file_path: str) -> str:
-        """Upload a file to MinIO and return the object path."""
+        """上传本地文件到 MinIO，返回对象路径。"""
         self.client.fput_object(self.bucket, object_name, file_path)
         return f"{self.bucket}/{object_name}"
 
     def download_file(self, object_name: str, file_path: str) -> str:
-        """Download a file from MinIO to a local path."""
+        """从 MinIO 下载文件到本地路径。"""
         self.client.fget_object(self.bucket, object_name, file_path)
         return file_path
 
     def get_presigned_url(self, object_name: str, expires: int = 3600) -> str:
-        """Generate a presigned URL for accessing an object."""
+        """生成对象的预签名访问 URL。"""
         return self.client.presigned_get_object(self.bucket, object_name, expires=expires)
 
     def delete_object(self, object_name: str) -> None:
-        """Delete an object from MinIO."""
+        """从 MinIO 删除对象。"""
         self.client.remove_object(self.bucket, object_name)
 
     def put_object(self, object_name: str, data: bytes) -> str:
-        """Upload bytes directly to MinIO."""
-        self.client.put_object(
-            self.bucket, object_name, BytesIO(data), len(data)
-        )
+        """直接上传 bytes 到 MinIO。"""
+        self.client.put_object(self.bucket, object_name, BytesIO(data), len(data))
         return f"{self.bucket}/{object_name}"
 
     def list_objects(self, prefix: str = "") -> list[str]:
-        """List all objects with the given prefix."""
+        """列出指定前缀下的所有对象。"""
         objects = self.client.list_objects(self.bucket, prefix=prefix, recursive=True)
         return [obj.object_name for obj in objects]
 

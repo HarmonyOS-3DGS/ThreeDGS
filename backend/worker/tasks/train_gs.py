@@ -1,20 +1,25 @@
-"""Stage 3: 3D Gaussian Splatting training task (stub)."""
+"""Stage 3: 3D Gaussian Splatting 训练任务（Stub）。"""
+
 import time
+
+from backend.core.repository import TaskRepository
 from backend.worker.celery_app import app
 from backend.worker.models.trainer import Trainer
 from backend.worker.tasks.shared import task_output_path
-from backend.core.repository import TaskRepository
 
 
 @app.task(bind=True, time_limit=3600)
 def train_gaussian_splatting(self, prev_result: dict, iterations: int = 30000):
-    """Stub: Simulate 3DGS training with progress updates."""
+    """Stub: 模拟 3DGS 训练并更新进度。"""
     task_id = prev_result["task_id"]
     TaskRepository.update_progress(task_id, "training", 50)
 
     for progress in range(50, 81, 5):
         try:
-            self.update_state(state="PROGRESS", meta={"current": progress, "total": 100, "stage": "training"})
+            self.update_state(
+                state="PROGRESS",
+                meta={"current": progress, "total": 100, "stage": "training"},
+            )
         except Exception:
             pass
         TaskRepository.update_progress(task_id, "training", progress)
@@ -26,7 +31,10 @@ def train_gaussian_splatting(self, prev_result: dict, iterations: int = 30000):
 
         TaskRepository.update_progress(task_id, "training", 80)
         try:
-            self.update_state(state="PROGRESS", meta={"current": 80, "total": 100, "stage": "training"})
+            self.update_state(
+                state="PROGRESS",
+                meta={"current": 80, "total": 100, "stage": "training"},
+            )
         except Exception:
             pass
 

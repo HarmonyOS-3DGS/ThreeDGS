@@ -1,6 +1,8 @@
 """Authorization header authentication."""
-from fastapi import Security, HTTPException, status
+
+from fastapi import HTTPException, Security, status
 from fastapi.security import APIKeyHeader
+
 from backend.core.config import settings
 
 AUTH_HEADER = APIKeyHeader(name="Authorization", auto_error=False)

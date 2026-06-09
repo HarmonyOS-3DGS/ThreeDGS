@@ -1,9 +1,20 @@
 """TaskRepository — 统一封装 Task / TaskFile 数据库操作。
 
-支持两种使用模式：
-  - API 层：注入 Session（Depends 生命周期管理）
-  - Worker 层：自动创建独立 Session（静态方法，self-contained）
+设计要点：
+  - 双模式 Session 管理：
+    实例方法（API 层）：接收 Depends 注入的 Session，生命周期由请求管理
+    静态方法（Worker 层）：自行创建 SessionLocal → 操作 → 关闭，线程安全
+  - 静态方法返回 dict/list 而非 ORM 对象，避免跨 session 访问 detached 实例
+
+使用示例：
+  # API 层
+  repo = TaskRepository(db)
+  task = repo.get(task_id, project_id)
+
+  # Worker 层
+  TaskRepository.update_progress(task_id, "training", 50, status="processing")
 """
+
 import os
 from datetime import datetime, timedelta
 
@@ -51,18 +62,26 @@ class TaskRepository:
             .all()
         )
 
-    def find_file_by_name(self, task_id: str, filename: str, role: str = "compressed_model") -> TaskFile | None:
+    def find_file_by_name(
+        self, task_id: str, filename: str, role: str = "compressed_model"
+    ) -> TaskFile | None:
         return (
             self.db.query(TaskFile)
-            .filter(TaskFile.task_id == task_id, TaskFile.fileRole == role, TaskFile.fileName == filename)
+            .filter(
+                TaskFile.task_id == task_id,
+                TaskFile.fileRole == role,
+                TaskFile.fileName == filename,
+            )
             .first()
         )
 
     # ── Worker 层（独立 Session，线程安全）─────────────────
 
     @staticmethod
-    def update_progress(task_id: str, stage: str, progress: int,
-                        status: str | None = None, error: str | None = None) -> None:
+    def update_progress(
+        task_id: str, stage: str, progress: int, status: str | None = None, error: str | None = None
+    ) -> None:
+        """更新任务进度。remaining_time 按 stub 15 秒线性递减估算。"""
         db = SessionLocal()
         try:
             task = db.query(Task).filter(Task.id == task_id).first()
@@ -81,8 +100,9 @@ class TaskRepository:
             db.close()
 
     @staticmethod
-    def add_output_file(task_id: str, local_path: str, mime: str,
-                        storage_url: str | None = None) -> TaskFile | None:
+    def add_output_file(
+        task_id: str, local_path: str, mime: str, storage_url: str | None = None
+    ) -> TaskFile | None:
         db = SessionLocal()
         try:
             tf = TaskFile(
@@ -110,10 +130,14 @@ class TaskRepository:
         cutoff = datetime.utcnow() - timedelta(hours=hours)
         db = SessionLocal()
         try:
-            tasks = db.query(Task).filter(
-                Task.status == TaskStatus.PENDING.value,
-                Task.created_at < cutoff,
-            ).all()
+            tasks = (
+                db.query(Task)
+                .filter(
+                    Task.status == TaskStatus.PENDING.value,
+                    Task.created_at < cutoff,
+                )
+                .all()
+            )
             ids = [t.id for t in tasks]
             for t in tasks:
                 db.query(TaskFile).filter(TaskFile.task_id == t.id).delete()
@@ -130,10 +154,14 @@ class TaskRepository:
         cutoff = datetime.utcnow() - timedelta(days=days)
         db = SessionLocal()
         try:
-            tasks = db.query(Task).filter(
-                Task.status == TaskStatus.COMPLETED.value,
-                Task.completed_at < cutoff,
-            ).all()
+            tasks = (
+                db.query(Task)
+                .filter(
+                    Task.status == TaskStatus.COMPLETED.value,
+                    Task.completed_at < cutoff,
+                )
+                .all()
+            )
             ids = [t.id for t in tasks]
             for t in tasks:
                 db.query(TaskFile).filter(TaskFile.task_id == t.id).delete()

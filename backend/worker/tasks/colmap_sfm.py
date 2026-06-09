@@ -1,18 +1,23 @@
-"""Stage 2: COLMAP SfM task (stub)."""
+"""Stage 2: COLMAP SfM 任务（Stub）。"""
+
 import time
+
+from backend.core.repository import TaskRepository
 from backend.worker.celery_app import app
 from backend.worker.models.preprocessor import Preprocessor
 from backend.worker.tasks.shared import task_output_path
-from backend.core.repository import TaskRepository
 
 
 @app.task(bind=True, max_retries=2, default_retry_delay=30)
 def run_colmap(self, prev_result: dict):
-    """Stub: Simulate COLMAP Structure-from-Motion."""
+    """Stub: 模拟 COLMAP SfM。"""
     task_id = prev_result["task_id"]
     TaskRepository.update_progress(task_id, "colmap", 30)
     try:
-        self.update_state(state="PROGRESS", meta={"current": 30, "total": 100, "stage": "colmap"})
+        self.update_state(
+            state="PROGRESS",
+            meta={"current": 30, "total": 100, "stage": "colmap"},
+        )
     except Exception:
         pass
 
@@ -24,7 +29,10 @@ def run_colmap(self, prev_result: dict):
 
         TaskRepository.update_progress(task_id, "colmap", 45)
         try:
-            self.update_state(state="PROGRESS", meta={"current": 45, "total": 100, "stage": "colmap"})
+            self.update_state(
+                state="PROGRESS",
+                meta={"current": 45, "total": 100, "stage": "colmap"},
+            )
         except Exception:
             pass
 

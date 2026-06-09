@@ -1,9 +1,11 @@
 """Task ORM model, status/stage enums, and ID generation."""
+
+import enum
 from datetime import datetime
 from uuid import uuid4
-from sqlalchemy import Column, String, DateTime, Integer, Text
+
+from sqlalchemy import Column, DateTime, Integer, String, Text
 from sqlalchemy.orm import relationship
-import enum
 
 from backend.core.database import Base
 
@@ -13,14 +15,14 @@ def _generate_task_id():
     return f"{ts}{uuid4().hex[:6]}"
 
 
-class TaskStatus(str, enum.Enum):
+class TaskStatus(enum.StrEnum):
     PENDING = "pending"
     PROCESSING = "processing"
     COMPLETED = "completed"
     FAILED = "failed"
 
 
-class TaskStage(str, enum.Enum):
+class TaskStage(enum.StrEnum):
     INITIALIZING = "initializing"
     EXTRACTING = "extracting"
     COLMAP = "colmap"
