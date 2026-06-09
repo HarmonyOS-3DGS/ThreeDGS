@@ -26,6 +26,9 @@ services:
     volumes:
       - task_output:/app/local_storage/tasks
       - upload_data:/app/local_storage/uploads
+      # 若需指定宿主机数据盘，取消注释下面两行并注释上面两行：
+      # - /mnt/data/3dgs/tasks:/app/local_storage/tasks
+      # - /mnt/data/3dgs/uploads:/app/local_storage/uploads
 
   worker:
     build:
@@ -49,6 +52,8 @@ services:
       - minio
     volumes:
       - task_output:/app/local_storage/tasks
+      # 若需指定宿主机数据盘：
+      # - /mnt/data/3dgs/tasks:/app/local_storage/tasks
 
   redis:
     image: redis:7-alpine
