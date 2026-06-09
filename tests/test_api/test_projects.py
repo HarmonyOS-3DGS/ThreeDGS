@@ -1,6 +1,8 @@
 """Tests for task query and start endpoints."""
 import pytest
 
+from backend.core.database import TaskFile
+
 
 class TestTasks:
     def _create_body(self):
@@ -57,3 +59,27 @@ class TestTasks:
         resp = client.get(f"/tasks/{task_id}", headers={"projectId": "proj-01"})
         assert resp.status_code == 200
         assert resp.json()["status"] == "processing"
+
+    def test_query_download_infos_from_db(self, client, db_session):
+        create_resp = self._create_task(client)
+        task_id = create_resp.json()["taskId"]
+
+        # 模拟 compress 阶段写入 output 文件记录
+        tf = TaskFile(
+            task_id=task_id,
+            fileName="model.spz",
+            sha256="",
+            contentLength=100,
+            fileUrl="/tmp/test.spz",
+            fileRole="compressed_model",
+            mimeType="application/octet-stream",
+        )
+        db_session.add(tf)
+        db_session.commit()
+
+        resp = client.get(f"/tasks/{task_id}", headers={"projectId": "proj-01"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["downloadInfos"]) == 1
+        assert data["downloadInfos"][0]["fileName"] == "model.spz"
+        assert data["downloadInfos"][0]["fileRole"] == "compressed_model"

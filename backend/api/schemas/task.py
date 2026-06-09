@@ -2,6 +2,8 @@
 from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
+VALID_FILE_ROLES = {"source_video", "source_images", "compressed_model", "pose_data"}
+
 
 class ConnectRet(BaseModel):
     code: int = 0
@@ -12,7 +14,9 @@ class FileInfo(BaseModel):
     fileName: str = Field(..., max_length=256)
     sha256: Optional[str] = Field(None, max_length=64)
     contentLength: Optional[int] = None
-    fileUrl: str
+    fileUrl: str = ""
+    fileRole: str = "source_video"
+    mimeType: Optional[str] = None
 
 
 class CreateTaskReq(BaseModel):

@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from backend.core.database import Task, TaskFile, TaskStatus, TaskStage
 from backend.api.schemas.task import (
     CreateTaskReq, CreateTaskRsp, FileInfo, GetTaskRsp,
-    StartTaskRsp, TaskListResponse,
+    StartTaskRsp, TaskListResponse, VALID_FILE_ROLES,
 )
 from backend.api.deps import get_database
 from backend.core.auth import verify_app_auth, verify_project_auth
@@ -148,6 +148,7 @@ async def create_task(
 
     result_files = []
     for fi in file_infos:
+        role = fi.fileRole if fi.fileRole in VALID_FILE_ROLES else "source_video"
         content = file_contents.get(fi.fileName, b"")
         saved = await _save_file(task.id, fi, content=content)
         task_file = TaskFile(
@@ -156,6 +157,8 @@ async def create_task(
             sha256=saved.sha256,
             contentLength=saved.contentLength,
             fileUrl=saved.fileUrl,
+            fileRole=role,
+            mimeType=fi.mimeType,
         )
         db.add(task_file)
         result_files.append(saved)
@@ -219,18 +222,19 @@ def query_task(
         raise HTTPException(status_code=404, detail={"ret": {"code": 404, "msg": "Task not found"}})
 
     download_infos = []
-    if task.status == TaskStatus.COMPLETED.value:
-        compressed_dir = os.path.join(TASK_OUTPUT_DIR, str(task.id), "compressed")
-        if os.path.isdir(compressed_dir):
-            for fname in os.listdir(compressed_dir):
-                fpath = os.path.join(compressed_dir, fname)
-                if os.path.isfile(fpath):
-                    download_infos.append(FileInfo(
-                        fileName=fname,
-                        sha256="",
-                        contentLength=os.path.getsize(fpath),
-                        fileUrl=fpath,
-                    ))
+    output_files = db.query(TaskFile).filter(
+        TaskFile.task_id == task.id,
+        TaskFile.fileRole == "compressed_model",
+    ).all()
+    for f in output_files:
+        download_infos.append(FileInfo(
+            fileName=f.fileName,
+            sha256=f.sha256,
+            contentLength=f.contentLength,
+            fileUrl=f.fileUrl,
+            fileRole=f.fileRole,
+            mimeType=f.mimeType,
+        ))
 
     return GetTaskRsp(
         taskId=task.id,

@@ -19,30 +19,50 @@ if (uploadForm) {
         const projectId = document.getElementById("project-id").value.trim();
         const externalCode = document.getElementById("external-code").value.trim();
         const scene = document.getElementById("scene").value;
+        const fileType = document.getElementById("file-type").value;
         const fileInput = document.getElementById("file-input");
-        const file = fileInput.files[0];
 
-        if (!file) {
+        // 切换文件类型时重置选择
+        function updateFileInput() {
+            const ft = document.getElementById("file-type").value;
+            if (ft === "source_images") {
+                fileInput.multiple = true;
+                fileInput.accept = "image/*";
+            } else {
+                fileInput.multiple = false;
+                fileInput.accept = "video/*";
+            }
+            fileInput.value = "";  // reset selection on type change
+        }
+        document.getElementById("file-type").onchange = updateFileInput;
+        updateFileInput();
+
+        if (!fileInput.files.length) {
             result.innerHTML = `<p style="color:#ef4444;">请选择文件</p>`;
             btn.disabled = false;
             btn.textContent = "创建任务";
             return;
         }
 
-        const buf = await file.arrayBuffer();
-        const hash = await crypto.subtle.digest("SHA-256", buf);
-        const sha256 = Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
-
         const formData = new FormData();
         formData.append("externalCode", externalCode);
         formData.append("scene", scene);
-        formData.append("filesMeta", JSON.stringify([{
-            fileName: file.name,
-            sha256: sha256,
-            contentLength: file.size,
-            fileUrl: "",
-        }]));
-        formData.append("files", file);
+
+        const metaList = [];
+        for (const file of fileInput.files) {
+            const buf = await file.arrayBuffer();
+            const hash = await crypto.subtle.digest("SHA-256", buf);
+            const sha256 = Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
+            metaList.push({
+                fileName: file.name,
+                sha256: sha256,
+                contentLength: file.size,
+                fileUrl: "",
+                fileRole: fileType,
+            });
+            formData.append("files", file);
+        }
+        formData.append("filesMeta", JSON.stringify(metaList));
 
         try {
             const res = await fetch(API, {

@@ -330,6 +330,8 @@ curl "http://localhost:8000/tasks/{task_id}/download?file=model.spz" \
 
 关键 ORM 模型定义在 `backend/core/database.py`，使用 SQLAlchemy 2.0 声明式基类，**无 Alembic 迁移脚本**，MVP 阶段通过 `init_db()` 自动建表。
 
+> 📖 详细数据库设计文档见 `docs/database_design.md`，包含完整字段表、索引、状态流转图。修改 ORM 模型后请同步更新该文档。
+
 ### Task 模型（`tasks` 表）
 
 | 字段 | 类型 | 说明 |
@@ -359,6 +361,8 @@ curl "http://localhost:8000/tasks/{task_id}/download?file=model.spz" \
 | `sha256` | `String(64)` | 文件 SHA256 哈希 |
 | `contentLength` | `Integer` | 文件大小（字节） |
 | `fileUrl` | `String(1024)` | 文件存储路径（本地绝对路径） |
+| `fileRole` | `String(50)` | 文件角色：`source_video` / `source_images` / `compressed_model` |
+| `mimeType` | `String(128)` | MIME 类型（可选） |
 
 ---
 

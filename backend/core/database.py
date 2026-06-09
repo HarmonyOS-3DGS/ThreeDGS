@@ -1,4 +1,8 @@
-"""Database configuration and session management."""
+"""Database configuration and session management.
+
+Database design doc: docs/database_design.md
+⚠️ 修改 ORM 模型后请同步更新 docs/database_design.md 中的字段表、索引、状态流转等章节。
+"""
 from sqlalchemy import create_engine, Column, String, DateTime, Integer, Text, ForeignKey
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
@@ -68,6 +72,8 @@ class TaskFile(Base):
     sha256 = Column(String(64), nullable=False)
     contentLength = Column(Integer, nullable=False)
     fileUrl = Column(String(1024), nullable=False)
+    fileRole = Column(String(50), nullable=False, default="source_video")
+    mimeType = Column(String(128), nullable=True)
 
     task = relationship("Task", back_populates="files")
 
