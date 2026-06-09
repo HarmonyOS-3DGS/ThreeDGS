@@ -10,4 +10,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/ ./backend/
 
-CMD ["celery", "-A", "backend.worker.celery_app", "worker", "--loglevel=info", "-c", "1"]
+CMD ["celery", "-A", "backend.worker.celery_app", "worker", "--loglevel=info", "-c", "1", "-B"]

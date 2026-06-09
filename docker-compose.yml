@@ -17,12 +17,15 @@ services:
       - MINIO_SECRET_KEY=minioadmin
       - MINIO_BUCKET=gaussian
       - MINIO_SECURE=false
+      - USE_LOCAL_STORAGE=true
+      - LOCAL_STORAGE_DIR=/app/local_storage
     depends_on:
       - db
       - redis
       - minio
     volumes:
-      - /tmp/3dgs-uploads:/tmp/3dgs-uploads
+      - task_output:/app/local_storage/tasks
+      - upload_data:/app/local_storage/uploads
 
   worker:
     build:
@@ -38,13 +41,14 @@ services:
       - MINIO_SECRET_KEY=minioadmin
       - MINIO_BUCKET=gaussian
       - MINIO_SECURE=false
+      - USE_LOCAL_STORAGE=true
+      - LOCAL_STORAGE_DIR=/app/local_storage
     depends_on:
       - db
       - redis
       - minio
     volumes:
-      - /tmp/3dgs-uploads:/tmp/3dgs-uploads
-      - worker_cache:/tmp
+      - task_output:/app/local_storage/tasks
 
   redis:
     image: redis:7-alpine
@@ -77,4 +81,5 @@ services:
 volumes:
   pgdata:
   miniodata:
-  worker_cache:
+  task_output:
+  upload_data:

@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+env/
+
+# DB & storage
+*.db
+*.db-journal
+local_storage/
+uploads/
+
+# Tests & scripts
+test.db
+realtest.db
+realtest_storage/
+integration_test.db
+integration_test_storage/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Reference (large, non-code)
+reference/
+
+# Git
+.git/
+.gitignore
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docs (dev-only)
+docs/my_to_do.md
+todo/
