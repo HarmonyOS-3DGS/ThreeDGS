@@ -19,6 +19,8 @@ integration_test_storage/
 .pytest_cache/
 .coverage
 htmlcov/
+tests/
+scripts/
 
 # Reference (large, non-code)
 reference/
@@ -26,6 +28,9 @@ reference/
 # Git
 .git/
 .gitignore
+
+# Env (local dev only)
+.env.local
 
 # OS
 .DS_Store

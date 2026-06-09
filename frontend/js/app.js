@@ -9,6 +9,25 @@ function apiHeaders(projectId) {
 // ====== Upload page ======
 const uploadForm = document.getElementById("upload-form");
 if (uploadForm) {
+    const inputVideo = document.getElementById("file-input-video");
+    const inputImages = document.getElementById("file-input-images");
+
+    function getActiveInput() {
+        return document.getElementById("file-type").value === "source_images" ? inputImages : inputVideo;
+    }
+
+    document.getElementById("file-type").onchange = function () {
+        if (this.value === "source_images") {
+            inputVideo.style.display = "none";
+            inputVideo.value = "";
+            inputImages.style.display = "";
+        } else {
+            inputImages.style.display = "none";
+            inputImages.value = "";
+            inputVideo.style.display = "";
+        }
+    };
+
     uploadForm.addEventListener("submit", async (e) => {
         e.preventDefault();
         const btn = document.getElementById("submit-btn");
@@ -20,22 +39,7 @@ if (uploadForm) {
         const externalCode = document.getElementById("external-code").value.trim();
         const scene = document.getElementById("scene").value;
         const fileType = document.getElementById("file-type").value;
-        const fileInput = document.getElementById("file-input");
-
-        // 切换文件类型时重置选择
-        function updateFileInput() {
-            const ft = document.getElementById("file-type").value;
-            if (ft === "source_images") {
-                fileInput.multiple = true;
-                fileInput.accept = "image/*";
-            } else {
-                fileInput.multiple = false;
-                fileInput.accept = "video/*";
-            }
-            fileInput.value = "";  // reset selection on type change
-        }
-        document.getElementById("file-type").onchange = updateFileInput;
-        updateFileInput();
+        const fileInput = getActiveInput();
 
         if (!fileInput.files.length) {
             result.innerHTML = `<p style="color:#ef4444;">请选择文件</p>`;

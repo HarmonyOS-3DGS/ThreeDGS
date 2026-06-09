@@ -14,9 +14,8 @@ class TestExtractFrames:
 
     def test_extract_frames_updates_progress(self):
         with patch("backend.worker.tasks.extract_frames.time.sleep"):
-            with patch("backend.worker.tasks.shared.SessionLocal") as MockSession:
-                mock_db = MockSession.return_value
-                mock_task = mock_db.query.return_value.filter.return_value.first.return_value
+            with patch("backend.worker.tasks.shared.TaskRepository.update_progress") as mock_update:
                 extract_frames.run("test-id", "/tmp/test.mp4")
-                assert mock_task.current_stage == "extracting"
-                assert mock_task.progress == 25
+                assert mock_update.call_count >= 2
+                # 第一次调用: stage=extracting, progress=10
+                assert mock_update.call_args_list[0][0] == ("test-id", "extracting", 10)

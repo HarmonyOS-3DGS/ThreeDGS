@@ -36,8 +36,9 @@
                     <option value="source_images">图片（可多选）</option>
                 </select>
 
-                <label for="file-input">选择文件</label>
-                <input type="file" id="file-input" name="files" accept="video/*,image/*" required>
+                <label for="file-input-video">选择文件</label>
+                <input type="file" id="file-input-video" accept="video/*">
+                <input type="file" id="file-input-images" accept="image/*" multiple style="display:none;">
 
                 <button type="submit" id="submit-btn">创建任务</button>
             </form>

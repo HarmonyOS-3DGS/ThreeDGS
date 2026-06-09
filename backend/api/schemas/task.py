@@ -44,6 +44,7 @@ class GetTaskRsp(BaseModel):
     progress: int
     remainingTime: int
     scene: str
+    errorMessage: str = ""
     downloadInfos: list[FileInfo] = []
 
 

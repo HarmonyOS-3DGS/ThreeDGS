@@ -12,6 +12,7 @@ os.environ.setdefault("MINIO_ACCESS_KEY", "minioadmin")
 os.environ.setdefault("MINIO_SECRET_KEY", "minioadmin")
 os.environ.setdefault("MINIO_BUCKET", "gaussian")
 os.environ.setdefault("MINIO_SECURE", "false")
+os.environ.setdefault("USE_LOCAL_STORAGE", "true")
 os.environ.setdefault("API_KEY", "test-key")
 
 import pytest

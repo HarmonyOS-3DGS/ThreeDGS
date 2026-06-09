@@ -4,28 +4,20 @@ import time
 from backend.worker.celery_app import app
 from backend.worker.models.compressor import Compressor
 from backend.worker.tasks.shared import update_task, task_output_path
-from backend.core.database import SessionLocal, TaskFile
+from backend.core.repository import TaskRepository
 
 
 def _add_output_file(task_id: str, path: str, mime: str):
+    # 上传到对象存储，fileUrl 存 MinIO 对象路径
+    object_name = f"tasks/{task_id}/compressed/{os.path.basename(path)}"
     try:
-        db = SessionLocal()
-        try:
-            tf = TaskFile(
-                task_id=task_id,
-                fileName=os.path.basename(path),
-                sha256="",
-                contentLength=os.path.getsize(path),
-                fileUrl=path,
-                fileRole="compressed_model",
-                mimeType=mime,
-            )
-            db.add(tf)
-            db.commit()
-        finally:
-            db.close()
+        from backend.core.storage import storage
+        storage.upload_file(object_name, path)
+        file_url = object_name
     except Exception:
-        pass
+        file_url = path
+
+    TaskRepository.add_output_file(task_id, path, mime, storage_url=file_url)
 
 
 @app.task(bind=True, time_limit=600)

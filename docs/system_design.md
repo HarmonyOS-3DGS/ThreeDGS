@@ -213,7 +213,7 @@ initializing (0%)
 | Pydantic Schema | POJO + Validation |
 | SQLAlchemy ORM | JPA / MyBatis |
 | Celery 任务链 | xxl-job / Quartz 编排 |
-| Jinja2 前端（无框架） | Vue 3 + Vite SPA |
+| 原生 HTML/JS（无框架） | Vue 3 + Vite SPA |
 | SSE (sse-starlette) | Spring WebFlux SSE |
 | MinIO Python SDK | MinIO Java SDK |
 | SQLite / PostgreSQL | PostgreSQL |

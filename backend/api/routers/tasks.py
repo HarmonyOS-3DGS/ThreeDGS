@@ -10,7 +10,7 @@ import aiofiles
 from aiofiles import os as aio_os
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
@@ -23,6 +23,8 @@ from backend.api.deps import get_database
 from backend.core.auth import verify_app_auth, verify_project_auth
 from backend.core.config import TASK_OUTPUT_DIR
 from backend.core.task_publisher import submit_pipeline
+from backend.core.storage import storage
+from backend.core.file_utils import detect_mime
 
 router = APIRouter(prefix="/tasks", tags=["taskManagement"])
 
@@ -32,12 +34,12 @@ def _safe_filename(filename: str) -> str:
     return os.path.basename(filename)
 
 
-async def _save_file(task_id: str, fi: FileInfo, content: bytes = b"") -> FileInfo:
+async def _save_file(task_id: str, fi: FileInfo, content: bytes = b"", file_role: str = "source_video") -> FileInfo:
     safe_name = _safe_filename(fi.fileName)
     task_dir = os.path.join(TASK_OUTPUT_DIR, str(task_id))
     await aiofiles.os.makedirs(task_dir, exist_ok=True)
 
-    file_url = os.path.join(task_dir, safe_name)
+    local_path = os.path.join(task_dir, safe_name)
     actual_sha256 = fi.sha256 or ""
     content_length = fi.contentLength or 0
 
@@ -50,8 +52,25 @@ async def _save_file(task_id: str, fi: FileInfo, content: bytes = b"") -> FileIn
     if content:
         actual_sha256 = hashlib.sha256(content).hexdigest()
         content_length = len(content)
-        async with aiofiles.open(file_url, "wb") as f:
+        detected_mime = detect_mime(content)
+        # 魔数校验: source_video 必须是视频, source_images 必须是图片
+        if detected_mime:
+            if file_role == "source_video" and not detected_mime.startswith("video/"):
+                raise HTTPException(status_code=400, detail={
+                    "ret": {"code": 400, "msg": f"文件 {safe_name} 声明为视频，但实际类型为 {detected_mime}"}})
+            if file_role == "source_images" and not detected_mime.startswith("image/"):
+                raise HTTPException(status_code=400, detail={
+                    "ret": {"code": 400, "msg": f"文件 {safe_name} 声明为图片，但实际类型为 {detected_mime}"}})
+        async with aiofiles.open(local_path, "wb") as f:
             await f.write(content)
+
+    # 上传到对象存储（MinIO 或本地 fallback）
+    object_name = f"tasks/{task_id}/{safe_name}"
+    try:
+        storage.upload_file(object_name, local_path)
+        file_url = object_name
+    except Exception:
+        file_url = local_path
 
     return FileInfo(
         fileName=safe_name,
@@ -82,6 +101,7 @@ def list_tasks(
             progress=t.progress,
             remainingTime=t.remaining_time,
             scene=t.scene,
+            errorMessage=t.error_message or "",
             downloadInfos=[],
         )
         for t in tasks
@@ -114,11 +134,15 @@ async def create_task(
         form = await request.form()
         ec = form.get("externalCode") or ""
         sc = form.get("scene") or ""
+        if sc not in ("commodity", "indoor", "outdoor"):
+            raise HTTPException(status_code=400, detail={"ret": {"code": 400, "msg": "scene 参数不合法"}})
         fm = form.get("filesMeta") or "[]"
         if isinstance(fm, str):
             file_infos = [FileInfo(**m) for m in json.loads(fm)]
         else:
             file_infos = [FileInfo(**m) for m in json.loads(str(fm))]
+        if len(file_infos) < 1 or len(file_infos) > 3:
+            raise HTTPException(status_code=400, detail={"ret": {"code": 400, "msg": "fileInfos 数量应在 1-3 之间"}})
         upload_files = form.getlist("files")
         for f in upload_files:
             if hasattr(f, "filename") and f.filename:
@@ -150,7 +174,7 @@ async def create_task(
     for fi in file_infos:
         role = fi.fileRole if fi.fileRole in VALID_FILE_ROLES else "source_video"
         content = file_contents.get(fi.fileName, b"")
-        saved = await _save_file(task.id, fi, content=content)
+        saved = await _save_file(task.id, fi, content=content, file_role=role)
         task_file = TaskFile(
             task_id=task.id,
             fileName=saved.fileName,
@@ -199,7 +223,15 @@ def start_task(
     )
 
     if first_video:
-        submit_pipeline(task_id, first_video.fileUrl)
+        # 确保流水线需要的视频文件在共享卷上可用
+        remote_path = first_video.fileUrl
+        local_video = os.path.join(TASK_OUTPUT_DIR, str(task_id), os.path.basename(remote_path))
+        if not os.path.exists(local_video):
+            try:
+                storage.download_file(remote_path, local_video)
+            except Exception:
+                pass
+        submit_pipeline(task_id, local_video)
     else:
         task.status = TaskStatus.FAILED.value
         task.error_message = "没有找到可处理的视频文件"
@@ -243,6 +275,7 @@ def query_task(
         progress=task.progress,
         remainingTime=task.remaining_time,
         scene=task.scene,
+        errorMessage=task.error_message or "",
         downloadInfos=download_infos,
     )
 
@@ -269,6 +302,20 @@ def download_file(
         raise HTTPException(status_code=404, detail={"ret": {"code": 404, "msg": "Task not found"}})
 
     safe_name = _safe_filename(file)
+    # 从 DB 查找 compressed_model 记录
+    task_file = db.query(TaskFile).filter(
+        TaskFile.task_id == task_id,
+        TaskFile.fileRole == "compressed_model",
+        TaskFile.fileName == safe_name,
+    ).first()
+    if task_file:
+        try:
+            url = storage.get_presigned_url(task_file.fileUrl, expires=3600)
+            return RedirectResponse(url=url)
+        except Exception:
+            pass
+
+    # 回退到本地文件
     fpath = os.path.join(TASK_OUTPUT_DIR, str(task.id), "compressed", safe_name)
     if not os.path.isfile(fpath):
         raise HTTPException(status_code=404, detail={"ret": {"code": 404, "msg": "File not found"}})

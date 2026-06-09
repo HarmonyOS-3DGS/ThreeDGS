@@ -133,7 +133,7 @@ paths:
         - name: taskId
           in: path
           required: true
-          description: 任务 ID（纯数字字符串）
+          description: 任务 ID（时间戳+随机后缀，如 1780612345678a3f4c）
           schema:
             type: string
             maxLength: 32
@@ -322,6 +322,14 @@ components:
         fileUrl:
           type: string
           description: 文件路径
+        fileRole:
+          type: string
+          description: 文件角色：source_video / source_images / compressed_model
+          example: "source_video"
+        mimeType:
+          type: string
+          description: MIME 类型
+          example: "video/mp4"
 
     CreateTaskReq:
       type: object
