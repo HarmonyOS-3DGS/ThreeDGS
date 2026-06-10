@@ -21,6 +21,7 @@ integration_test_storage/
 htmlcov/
 tests/
 scripts/
+!scripts/docker_test.sh
 
 # Reference (large, non-code)
 reference/

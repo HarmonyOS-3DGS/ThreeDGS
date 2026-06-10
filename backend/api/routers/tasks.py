@@ -23,6 +23,7 @@ from backend.api.schemas.task import (
 from backend.core.auth import verify_app_auth, verify_project_auth
 from backend.core.config import TASK_OUTPUT_DIR, settings
 from backend.core.database import Task, TaskFile, TaskStage, TaskStatus
+from backend.core.file_utils import detect_mime
 from backend.core.storage import storage
 from backend.core.task_publisher import submit_pipeline
 
@@ -142,6 +143,7 @@ async def upload_file(
     task_id: str,
     object_id: str,
     request: Request,
+    db: Session = Depends(get_database),
     _auth: str = Depends(verify_app_auth),
 ):
     """本地模式：接收客户端 PUT 的文件，写入本地存储。"""
@@ -154,6 +156,27 @@ async def upload_file(
         raise HTTPException(status_code=400, detail={"ret": {"code": 400, "msg": "文件已存在"}})
 
     content = await request.body()
+
+    # 魔数校验：对比 fileRole
+    detected_mime = detect_mime(content)
+    if detected_mime:
+        task_file = (
+            db.query(TaskFile)
+            .filter(TaskFile.task_id == task_id, TaskFile.fileName == safe_name)
+            .first()
+        )
+        if task_file:
+            role = task_file.fileRole
+            if role == "source_video" and not detected_mime.startswith("video/"):
+                raise HTTPException(
+                    status_code=400,
+                    detail={"ret": {"code": 400, "msg": f"文件声明为视频，实际为 {detected_mime}"}},
+                )
+            if role == "source_images" and not detected_mime.startswith("image/"):
+                raise HTTPException(
+                    status_code=400,
+                    detail={"ret": {"code": 400, "msg": f"文件声明为图片，实际为 {detected_mime}"}},
+                )
 
     async with aiofiles.open(local_path, "wb") as f:
         await f.write(content)
