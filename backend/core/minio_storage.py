@@ -43,8 +43,12 @@ class MinioStorageClient:
         return file_path
 
     def get_presigned_url(self, object_name: str, expires: int = 3600) -> str:
-        """生成对象的预签名访问 URL。"""
+        """生成对象的预签名 GET URL（下载用）。"""
         return self.client.presigned_get_object(self.bucket, object_name, expires=expires)
+
+    def get_presigned_put_url(self, object_name: str, expires: int = 3600) -> str:
+        """生成对象的预签名 PUT URL（上传用）。"""
+        return self.client.presigned_put_object(self.bucket, object_name, expires=expires)
 
     def delete_object(self, object_name: str) -> None:
         """从 MinIO 删除对象。"""

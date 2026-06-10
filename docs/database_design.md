@@ -23,7 +23,7 @@
 
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
-| `id` | `String(32)` | PK, `_generate_task_id()` | 格式：`timestamp_ms + uuid4_hex[:6]`，如 `1780614692192a3f4c` |
+| `id` | `String(32)` | PK, Snowflake 递增 | 纯数字，B-tree 友好，如 `332011480592384` |
 | `project_id` | `String(20)` | NOT NULL, INDEX | 项目 ID，从请求 Header `projectId` 传入 |
 | `external_code` | `String(256)` | NOT NULL, INDEX | 外部系统唯一标识码 |
 | `scene` | `String(32)` | NOT NULL | 场景类型枚举：`commodity` / `indoor` / `outdoor` |

@@ -66,7 +66,7 @@ if (!taskId) {
                 ${data.downloadInfos && data.downloadInfos.length > 0 ? `
                     <p style="margin-top:1rem;">下载文件:</p>
                     ${data.downloadInfos.map(f =>
-                        `<p><a href="/tasks/${taskId}/download?file=${encodeURIComponent(f.fileName)}&projectId=${projectId}&Authorization=${AUTH_TOKEN}">${f.fileName}</a> (${f.contentLength} bytes)</p>`
+                        `<p><a href="${f.url}" target="_blank">${f.fileName}</a></p>`
                     ).join("")}
                 ` : `<p style="color:#64748b;">暂无输出文件</p>`}
             `;

@@ -128,9 +128,11 @@ python run_local.py
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/tasks` | 创建任务。Header: `projectId`, `Authorization`。Body: JSON（`externalCode` + `fileInfos` 数组 + `scene` 枚举） |
+| POST | `/tasks` | 创建任务（JSON body: `externalCode` + `fileInfos` + `scene`），返回预签名上传 URL |
+| PUT | `/tasks/{id}/upload/{filename}` | 本地上传文件 |
 | POST | `/tasks/{id}/start` | 启动任务流水线 |
-| GET | `/tasks/{id}` | 查询任务状态及输出文件 |
+| GET | `/tasks/{id}` | 查询任务状态及输出文件下载链接 |
+| GET | `/tasks/{id}/download/{filename}` | 下载输出文件 |
 | GET | `/tasks/{id}/events` | SSE 实时进度推送（鉴权通过 Query 参数） |
 
 ### 鉴权

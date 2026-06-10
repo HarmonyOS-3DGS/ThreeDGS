@@ -41,10 +41,11 @@
 
 ### 核心流程
 
-1. **创建任务**（`POST /tasks`）—— 提交 JSON body 或 multipart/form-data → 注册元数据 → 状态 `pending`
-2. **启动任务**（`POST /tasks/{id}/start`）—— 提交 Celery 链 → 状态 `processing`
-3. **轮询 / SSE 等待** → 内部阶段：`initializing` → `extracting` → `colmap` → `training` → `compressing`
-4. **完成** → 状态 `completed`，可下载输出文件（SPZ / SOG）
+1. **创建任务**（`POST /tasks`）—— 提交 JSON body → 注册元数据 → 返回预签名上传 URL → 状态 `pending`
+2. **客户端上传文件** —— 按 `uploadInfos` 逐项 PUT 文件到 MinIO / 本地上传端点
+3. **启动任务**（`POST /tasks/{id}/start`）—— 检查文件存在 → 提交 Celery 链 → 状态 `processing`
+4. **轮询 / SSE 等待** → 内部阶段：`initializing` → `extracting` → `colmap` → `training` → `compressing`
+5. **完成** → 状态 `completed`，可下载输出文件（SPZ / SOG）
 
 ---
 
@@ -96,13 +97,14 @@
 │   │   │   └── sse.py          # GET /tasks/{id}/events（SSE 实时进度）
 │   │   └── schemas/
 │   │       ├── __init__.py
-│   │       └── task.py         # CreateTaskReq / CreateTaskRsp / StartTaskRsp / GetTaskRsp / TaskListResponse / TaskStatusEvent / FileInfo
+│   │       └── task.py         # CreateTaskReq / CreateTaskRsp / StartTaskRsp / GetTaskRsp / TaskListResponse / TaskStatusEvent / FileInfo / UrlInfo
 │   ├── core/                   # 基础设施层
 │   │   ├── __init__.py
 │   │   ├── config.py           # Pydantic Settings 配置（`.env` 驱动，含默认值）
 │   │   ├── database.py         # SQLAlchemy 引擎、Session、Base、init_db()
 │   │   ├── repository.py      # TaskRepository 数据访问层（API 注入 / Worker 独立双模式）
 │   │   ├── file_utils.py      # 文件魔数校验（detect_mime）
+│   │   ├── id_generator.py    # Snowflake ID 生成器（纯数字递增）
 │   │   ├── auth.py             # Authorization 鉴权（app_auth + project_auth，API_KEY 留空则关闭鉴权）
 │   │   ├── task_publisher.py  # API-Worker 解耦桥接（懒加载 + 注册回调）
 │   │   ├── interfaces.py      # StorageClient Protocol 抽象接口
@@ -301,11 +303,12 @@ SSE 端点额外支持 Query 参数传递鉴权信息（`projectId` 和 `Authori
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/tasks` | 创建任务。Body: JSON（`externalCode` + `fileInfos` 数组 + `scene` 枚举 `commodity/indoor/outdoor`）或 `multipart/form-data`（含文件上传） |
+| POST | `/tasks` | 创建任务。Body: JSON（`externalCode` + `fileInfos` 数组 + `scene` 枚举 `commodity/indoor/outdoor`），返回 `uploadInfos` 上传 URL |
 | GET | `/tasks` | 列出指定项目的所有任务（按 `created_at` 降序） |
-| POST | `/tasks/{id}/start` | 启动任务。`pending` → `processing`，提交 Celery 链 |
-| GET | `/tasks/{id}` | 查询任务状态、进度、输出文件列表 |
-| GET | `/tasks/{id}/download?file=` | 下载任务输出文件（从 `local_storage/tasks/{id}/compressed/`） |
+| POST | `/tasks/{id}/start` | 启动任务。检查文件已上传，`pending` → `processing`，提交 Celery 链 |
+| GET | `/tasks/{id}` | 查询任务状态、进度、输出文件下载 URL |
+| GET | `/tasks/{id}/download/{filename}` | 下载任务输出文件 |
+| PUT | `/tasks/{id}/upload/{filename}` | 本地上传文件（Docker 模式通过 MinIO 预签名 URL 直接 PUT） |
 | GET | `/tasks/{id}/events` | SSE 实时进度推送（每 2 秒一条 `status` 事件，完成或失败时发送 `done` 事件） |
 
 ### REST 请求示例
@@ -346,7 +349,7 @@ curl "http://localhost:8000/tasks/{task_id}/download?file=model.spz" \
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `id` | `String(32)` PK | 主键，格式为 `timestamp_ms` + `uuid4_hex[:6]`，如 `1780614692192a3f4c` |
+| `id` | `String(32)` PK | 主键，Snowflake 递增纯数字，如 `332011480592384` |
 | `project_id` | `String(20)` | 项目 ID（Header 传入），带索引 |
 | `external_code` | `String(256)` | 外部系统唯一标识码，带索引 |
 | `scene` | `String(32)` | 场景类型：`commodity` / `indoor` / `outdoor` |
@@ -394,6 +397,7 @@ curl "http://localhost:8000/tasks/{task_id}/download?file=model.spz" \
    - `models/task_file.py`：`TaskFile` ORM
    - `repository.py`：`TaskRepository` 数据访问层，统一封装 DB 操作。支持 API 注入 Session 和 Worker 独立 Session 双模式
    - `file_utils.py`：`detect_mime()` 通过文件头魔数校验真实 MIME 类型，防止后缀伪造
+   - `id_generator.py`：Snowflake 简化版 ID 生成器，15 位纯数字递增
    - `auth.py`：`_verify_auth_key` 公共逻辑 + `verify_app_auth` / `verify_project_auth`
    - `storage.py`：懒加载代理 `_LazyStorage`，工厂函数 `get_storage()`
    - `local_storage.py` / `minio_storage.py`：统一接口（`upload_file` / `download_file` / `get_presigned_url` / `delete_object` / `put_object`）

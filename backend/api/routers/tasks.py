@@ -1,14 +1,12 @@
 """任务管理路由：创建、列表、启动、查询、下载。"""
 
-import hashlib
-import json
 import os
+from urllib.parse import urlencode
 
 import aiofiles
 import aiofiles.os
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import FileResponse, RedirectResponse
-from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from backend.api.deps import get_database
@@ -20,11 +18,11 @@ from backend.api.schemas.task import (
     GetTaskRsp,
     StartTaskRsp,
     TaskListResponse,
+    UrlInfo,
 )
 from backend.core.auth import verify_app_auth, verify_project_auth
-from backend.core.config import TASK_OUTPUT_DIR
+from backend.core.config import TASK_OUTPUT_DIR, settings
 from backend.core.database import Task, TaskFile, TaskStage, TaskStatus
-from backend.core.file_utils import detect_mime
 from backend.core.storage import storage
 from backend.core.task_publisher import submit_pipeline
 
@@ -36,66 +34,40 @@ def _safe_filename(filename: str) -> str:
     return os.path.basename(filename)
 
 
-async def _save_file(
-    task_id: str, fi: FileInfo, content: bytes = b"", file_role: str = "source_video"
-) -> FileInfo:
+def _gen_upload_url(task_id: str, fi: FileInfo) -> UrlInfo:
+    """为单个文件生成预签名上传 URL。"""
     safe_name = _safe_filename(fi.fileName)
-    task_dir = os.path.join(TASK_OUTPUT_DIR, str(task_id))
-    await aiofiles.os.makedirs(task_dir, exist_ok=True)
-
-    local_path = os.path.join(task_dir, safe_name)
-    actual_sha256 = fi.sha256 or ""
-    content_length = fi.contentLength or 0
-
-    if not content and fi.fileUrl:
-        safe_url = os.path.join(task_dir, _safe_filename(os.path.basename(fi.fileUrl)))
-        if os.path.isfile(safe_url):
-            async with aiofiles.open(safe_url, "rb") as f:
-                content = await f.read()
-
-    if content:
-        actual_sha256 = hashlib.sha256(content).hexdigest()
-        content_length = len(content)
-        detected_mime = detect_mime(content)
-        # 魔数校验: source_video 必须是视频, source_images 必须是图片
-        if detected_mime:
-            if file_role == "source_video" and not detected_mime.startswith("video/"):
-                raise HTTPException(
-                    status_code=400,
-                    detail={
-                        "ret": {
-                            "code": 400,
-                            "msg": f"文件 {safe_name} 声明为视频，但实际类型为 {detected_mime}",
-                        }
-                    },
-                )
-            if file_role == "source_images" and not detected_mime.startswith("image/"):
-                raise HTTPException(
-                    status_code=400,
-                    detail={
-                        "ret": {
-                            "code": 400,
-                            "msg": f"文件 {safe_name} 声明为图片，但实际类型为 {detected_mime}",
-                        }
-                    },
-                )
-        async with aiofiles.open(local_path, "wb") as f:
-            await f.write(content)
-
-    # 上传到对象存储（MinIO 或本地 fallback）
     object_name = f"tasks/{task_id}/{safe_name}"
     try:
-        storage.upload_file(object_name, local_path)
-        file_url = object_name
+        url = storage.get_presigned_put_url(object_name, expires=3600)
+        headers = {}
     except Exception:
-        file_url = local_path
-
-    return FileInfo(
+        url = f"/tasks/{task_id}/upload/{safe_name}"
+        headers = {"Authorization": settings.api_key} if settings.api_key else {}
+    return UrlInfo(
+        objectId=safe_name,
         fileName=safe_name,
-        sha256=actual_sha256,
-        contentLength=content_length,
-        fileUrl=file_url,
+        url=url,
+        method="PUT",
+        headers={
+            **headers,
+            "Content-Type": fi.mimeType or "application/octet-stream",
+        },
     )
+
+
+def _gen_download_url(task_id: str, tf: TaskFile, project_id: str = "") -> UrlInfo:
+    """为输出文件生成预签名下载 URL。"""
+    try:
+        url = storage.get_presigned_url(tf.fileUrl, expires=3600)
+    except Exception:
+        url = f"/tasks/{task_id}/download/{tf.fileName}"
+        if project_id:
+            params = {"projectId": project_id}
+            if settings.api_key:
+                params["Authorization"] = settings.api_key
+            url += f"?{urlencode(params)}"
+    return UrlInfo(objectId=tf.fileName, fileName=tf.fileName, url=url, method="GET")
 
 
 @router.get("", response_model=TaskListResponse)
@@ -124,103 +96,18 @@ def list_tasks(
     return TaskListResponse(items=items, total=len(items))
 
 
-def _validate_body(ec: str, sc: str, file_infos: list[FileInfo]) -> CreateTaskReq:
-    """Pydantic 校验并返回标准化 body。"""
-    try:
-        return CreateTaskReq(externalCode=ec, scene=sc, fileInfos=file_infos)
-    except ValidationError as e:
-        raise HTTPException(status_code=422, detail={"ret": {"code": 422, "msg": str(e)}})
-
-
-async def _parse_request_body(
-    request: Request,
-) -> tuple[str, str, list[FileInfo], dict[str, bytes]]:
-    """解析 JSON 或 multipart 请求体，返回 (externalCode, scene, fileInfos, file_contents)。"""
-    content_type = request.headers.get("content-type", "")
-    file_contents: dict[str, bytes] = {}
-
-    if "application/json" in content_type:
-        data = await request.json()
-        body = _validate_body(
-            data.get("externalCode", ""),
-            data.get("scene", ""),
-            [FileInfo(**m) for m in data.get("fileInfos", [])],
-        )
-        return body.externalCode, body.scene, body.fileInfos, file_contents
-
-    if "multipart/form-data" in content_type:
-        form = await request.form()
-        ec = form.get("externalCode") or ""
-        sc = form.get("scene") or ""
-        fm = form.get("filesMeta") or "[]"
-        if isinstance(fm, str):
-            file_infos = [FileInfo(**m) for m in json.loads(fm)]
-        else:
-            file_infos = [FileInfo(**m) for m in json.loads(str(fm))]
-        upload_files = form.getlist("files")
-        for f in upload_files:
-            if hasattr(f, "filename") and f.filename:
-                file_contents[f.filename] = await f.read()
-        for fi in file_infos:
-            content = file_contents.get(fi.fileName, b"")
-            if content:
-                fi.sha256 = hashlib.sha256(content).hexdigest()
-                fi.contentLength = len(content)
-        body = _validate_body(ec, sc, file_infos)
-        return body.externalCode, body.scene, body.fileInfos, file_contents
-
-    raise HTTPException(
-        status_code=400,
-        detail={
-            "ret": {
-                "code": 400,
-                "msg": "Unsupported content-type, use application/json or multipart/form-data",
-            }
-        },
-    )
-
-
-async def _save_task_files(
-    db: Session,
-    task_id: str,
-    file_infos: list[FileInfo],
-    file_contents: dict[str, bytes],
-) -> list[FileInfo]:
-    """保存上传文件并写入 TaskFile 记录，返回保存后的 FileInfo 列表。"""
-    result_files = []
-    for fi in file_infos:
-        role = fi.fileRole if fi.fileRole in VALID_FILE_ROLES else "source_video"
-        content = file_contents.get(fi.fileName, b"")
-        saved = await _save_file(task_id, fi, content=content, file_role=role)
-        task_file = TaskFile(
-            task_id=task_id,
-            fileName=saved.fileName,
-            sha256=saved.sha256,
-            contentLength=saved.contentLength,
-            fileUrl=saved.fileUrl,
-            fileRole=role,
-            mimeType=fi.mimeType,
-        )
-        db.add(task_file)
-        result_files.append(saved)
-    db.commit()
-    return result_files
-
-
 @router.post("", response_model=CreateTaskRsp)
-async def create_task(
-    request: Request,
+def create_task(
+    request: CreateTaskReq,
     projectId: str = Header(..., max_length=20),
     db: Session = Depends(get_database),
     _auth: str = Depends(verify_app_auth),
 ):
-    """创建3DGS任务。支持 JSON body 或 multipart/form-data."""
-    ec, sc, file_infos, file_contents = await _parse_request_body(request)
-
+    """创建3DGS任务。仅接收 JSON 元数据，返回预签名上传 URL。"""
     task = Task(
         project_id=projectId,
-        external_code=ec,
-        scene=sc,
+        external_code=request.externalCode,
+        scene=request.scene,
         status=TaskStatus.PENDING.value,
         current_stage=TaskStage.INITIALIZING.value,
     )
@@ -228,8 +115,50 @@ async def create_task(
     db.commit()
     db.refresh(task)
 
-    result_files = await _save_task_files(db, task.id, file_infos, file_contents)
-    return CreateTaskRsp(taskId=task.id, fileInfos=result_files)
+    upload_infos = []
+    for fi in request.fileInfos:
+        safe_name = _safe_filename(fi.fileName)
+        url_info = _gen_upload_url(task.id, fi)
+        role = fi.fileRole if fi.fileRole in VALID_FILE_ROLES else "source_video"
+        # fileUrl 存完整对象路径（MinIO 操作需要），objectId 只存文件名（给客户端看）
+        task_file = TaskFile(
+            task_id=task.id,
+            fileName=safe_name,
+            sha256="",
+            contentLength=0,
+            fileUrl=f"tasks/{task.id}/{safe_name}",
+            fileRole=role,
+            mimeType=fi.mimeType,
+        )
+        db.add(task_file)
+        upload_infos.append(url_info)
+
+    db.commit()
+    return CreateTaskRsp(taskId=task.id, uploadInfos=upload_infos)
+
+
+@router.put("/{task_id}/upload/{object_id:path}", tags=["fileTransfer"])
+async def upload_file(
+    task_id: str,
+    object_id: str,
+    request: Request,
+    _auth: str = Depends(verify_app_auth),
+):
+    """本地模式：接收客户端 PUT 的文件，写入本地存储。"""
+    safe_name = _safe_filename(os.path.basename(object_id))
+    task_dir = os.path.join(TASK_OUTPUT_DIR, str(task_id))
+    await aiofiles.os.makedirs(task_dir, exist_ok=True)
+
+    local_path = os.path.join(task_dir, safe_name)
+    if os.path.isfile(local_path):
+        raise HTTPException(status_code=400, detail={"ret": {"code": 400, "msg": "文件已存在"}})
+
+    content = await request.body()
+
+    async with aiofiles.open(local_path, "wb") as f:
+        await f.write(content)
+
+    return {"ret": {"code": 0, "msg": "success"}, "fileName": safe_name, "size": len(content)}
 
 
 @router.post("/{task_id}/start", response_model=StartTaskRsp)
@@ -263,7 +192,7 @@ def start_task(
     )
 
     if first_video:
-        # 确保流水线需要的视频文件在共享卷上可用
+        # 确保文件已上传并下载到共享卷
         remote_path = first_video.fileUrl
         local_video = os.path.join(TASK_OUTPUT_DIR, str(task_id), os.path.basename(remote_path))
         if not os.path.exists(local_video):
@@ -271,6 +200,19 @@ def start_task(
                 storage.download_file(remote_path, local_video)
             except Exception:
                 pass
+        if not os.path.exists(local_video):
+            task.status = TaskStatus.FAILED.value
+            task.error_message = "文件尚未上传"
+            db.commit()
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "ret": {
+                        "code": 400,
+                        "msg": "文件尚未上传，请先通过 uploadInfos 中的 URL 上传文件",
+                    }
+                },
+            )
         submit_pipeline(task_id, local_video)
     else:
         task.status = TaskStatus.FAILED.value
@@ -305,16 +247,7 @@ def query_task(
         .all()
     )
     for f in output_files:
-        download_infos.append(
-            FileInfo(
-                fileName=f.fileName,
-                sha256=f.sha256,
-                contentLength=f.contentLength,
-                fileUrl=f.fileUrl,
-                fileRole=f.fileRole,
-                mimeType=f.mimeType,
-            )
-        )
+        download_infos.append(_gen_download_url(task.id, f, project_id=projectId))
 
     return GetTaskRsp(
         taskId=task.id,
@@ -328,10 +261,10 @@ def query_task(
     )
 
 
-@router.get("/{task_id}/download")
+@router.get("/{task_id}/download/{object_id:path}", tags=["fileTransfer"])
 def download_file(
     task_id: str,
-    file: str,
+    object_id: str,
     projectId_h: str | None = Header(None, alias="projectId", max_length=20),
     projectId_q: str | None = Query(None, alias="projectId", max_length=20),
     auth_h: str | None = Header(None, alias="Authorization"),
@@ -352,8 +285,7 @@ def download_file(
     if not task:
         raise HTTPException(status_code=404, detail={"ret": {"code": 404, "msg": "Task not found"}})
 
-    safe_name = _safe_filename(file)
-    # 从 DB 查找 compressed_model 记录
+    safe_name = _safe_filename(os.path.basename(object_id))
     task_file = (
         db.query(TaskFile)
         .filter(
@@ -370,7 +302,6 @@ def download_file(
         except Exception:
             pass
 
-    # 回退到本地文件
     fpath = os.path.join(TASK_OUTPUT_DIR, str(task.id), "compressed", safe_name)
     if not os.path.isfile(fpath):
         raise HTTPException(status_code=404, detail={"ret": {"code": 404, "msg": "File not found"}})

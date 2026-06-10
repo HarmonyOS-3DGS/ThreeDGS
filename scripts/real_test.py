@@ -142,8 +142,23 @@ if r.status_code != 200:
     print("ABORT - create task failed")
     sys.exit(1)
 
-task_id = r.json()["taskId"]
+data = r.json()
+task_id = data["taskId"]
 print(f"  Task ID: {task_id}")
+
+# Test 1b: Upload file via presigned URL
+upload_info = data["uploadInfos"][0]
+check("Has uploadInfos", len(data["uploadInfos"]) > 0)
+upload_url = upload_info["url"]
+if upload_url.startswith("/"):
+    upload_url = f"{URL}{upload_url}"
+r = httpx.put(
+    upload_url,
+    content=b"dummy_video_data",
+    headers=upload_info.get("headers", {}),
+    timeout=10,
+)
+check("Upload file", r.status_code in (200, 204), f"status={r.status_code}")
 
 # Test 2: Start task
 r = httpx.post(

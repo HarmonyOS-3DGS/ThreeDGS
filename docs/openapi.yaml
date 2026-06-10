@@ -2,12 +2,13 @@ openapi: "3.0.3"
 info:
   title: 3DGS Platform API
   description: |
-    3D Gaussian Splatting（3DGS）端到端训练平台 API v3。
+    3D Gaussian Splatting（3DGS）端到端训练平台 API v4。
 
     核心流程：
-      1. 创建任务（POST /tasks）→ 状态 pending
-      2. 启动任务（POST /tasks/{taskId}/start）→ status: pending → processing
-      3. 轮询/SSE 等待（GET /tasks/{taskId} / GET /tasks/{taskId}/events）
+      1. 创建任务（POST /tasks）→ 返回上传 URL，状态 pending
+      2. 客户端 PUT 文件到预签名 URL / 本地上传端点
+      3. 启动任务（POST /tasks/{taskId}/start）→ 检查文件 → processing
+      4. 轮询/SSE 等待（GET /tasks/{taskId} / GET /tasks/{taskId}/events）
 
     内部流水线阶段（外部只感知 pending / processing / completed / failed）：
       initializing → extracting → colmap → training → compressing → completed
@@ -15,7 +16,7 @@ info:
     接口鉴权分为两种策略：
       - app_auth：创建任务
       - project_auth：启动、查询、列表、下载、SSE
-  version: "3.0.0"
+  version: "4.0.0"
 
 servers:
   - url: http://localhost:8000
@@ -53,11 +54,9 @@ paths:
     post:
       summary: 创建3DGS任务
       description: |
-        创建训练任务，状态为 pending，长时间不启动会被清理。
-
-        支持两种请求格式：
-        1. JSON body: Content-Type: application/json
-        2. multipart: Content-Type: multipart/form-data
+        创建训练任务，不传实际文件，仅注册元数据并返回预签名上传 URL。
+        客户端使用返回的 UrlInfo 自行 PUT 文件到 MinIO / 本地上传端点。
+        状态为 pending，长时间不启动会被清理。
       tags:
         - taskManagement
       operationId: createTask
@@ -78,33 +77,9 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/CreateTaskReq"
-          multipart/form-data:
-            schema:
-              type: object
-              required:
-                - externalCode
-                - filesMeta
-                - scene
-                - files
-              properties:
-                externalCode:
-                  type: string
-                  maxLength: 256
-                  description: 外部系统唯一 ID
-                scene:
-                  type: string
-                  enum: [commodity, indoor, outdoor]
-                filesMeta:
-                  type: string
-                  description: JSON 数组，每项为 FileInfo
-                files:
-                  type: array
-                  items:
-                    type: string
-                    format: binary
       responses:
         "200":
-          description: 任务创建成功
+          description: 任务创建成功，返回上传 URL 列表
           content:
             application/json:
               schema:
@@ -190,12 +165,47 @@ paths:
         "404":
           description: 任务不存在
 
-  /tasks/{taskId}/download:
+  /tasks/{taskId}/upload/{objectId}:
+    put:
+      summary: 上传文件（本地模式）
+      description: 本地模式下将文件上传到服务端存储。Docker 模式通过 MinIO 预签名 URL 直接上传，不使用此端点。
+      tags:
+        - fileTransfer
+      operationId: uploadFile
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 32
+        - name: objectId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 对象 ID，来自创建任务响应中 uploadInfos[].objectId
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: 上传成功
+        "400":
+          description: 文件已存在或参数错误
+        "404":
+          description: objectId 无效
+
+  /tasks/{taskId}/download/{objectId}:
     get:
       summary: 下载输出文件
-      description: 下载任务的输出文件（SPZ/SOG）
+      description: 下载任务的输出文件（SPZ/SOG）。Docker 模式 302 重定向到 MinIO 预签名 URL。
       tags:
-        - taskManagement
+        - fileTransfer
       operationId: downloadFile
       security:
         - project_auth: []
@@ -212,12 +222,13 @@ paths:
           schema:
             type: string
             maxLength: 32
-        - name: file
-          in: query
+        - name: objectId
+          in: path
           required: true
-          description: 文件名
+          description: 对象 ID，来自查询任务响应中 downloadInfos[].objectId
           schema:
             type: string
+          example: "tasks/1780612345678/compressed/model.spz"
       responses:
         "200":
           description: 文件内容
@@ -226,6 +237,8 @@ paths:
               schema:
                 type: string
                 format: binary
+        "302":
+          description: 重定向到 MinIO 预签名下载 URL
         "401":
           $ref: "#/components/responses/UnauthorizedError"
         "404":
@@ -302,6 +315,35 @@ components:
           description: 返回描述
           example: "success"
 
+    UrlInfo:
+      type: object
+      required: [objectId, fileName, url, method]
+      properties:
+        objectId:
+          type: string
+          description: 对象 ID（文件名，不含路径前缀）
+          example: "scene.mp4"
+        fileName:
+          type: string
+          description: 文件名
+          example: "scene.mp4"
+        url:
+          type: string
+          description: 访问 URL（上传或下载的预签名地址）
+          example: "http://minio:9000/gaussian/tasks/...?signature=..."
+        method:
+          type: string
+          enum: [PUT, GET]
+          description: HTTP 请求方法
+          example: "PUT"
+        headers:
+          type: object
+          description: 请求所需的额外 HTTP 头信息
+          additionalProperties:
+            type: string
+          example:
+            Content-Type: "video/mp4"
+
     FileInfo:
       type: object
       required: [fileName, fileUrl]
@@ -352,18 +394,19 @@ components:
 
     CreateTaskRsp:
       type: object
-      required: [ret, taskId, fileInfos]
+      required: [ret, taskId, uploadInfos]
       properties:
         ret:
           $ref: "#/components/schemas/ConnectRet"
         taskId:
           type: string
-          description: 任务 ID（纯数字）
-          example: "1780612345678"
-        fileInfos:
+          description: 任务 ID
+          example: "1780612345678a3f4c"
+        uploadInfos:
           type: array
+          description: 上传 URL 列表（客户端按此列表 PUT 文件）
           items:
-            $ref: "#/components/schemas/FileInfo"
+            $ref: "#/components/schemas/UrlInfo"
 
     StartTaskRsp:
       type: object
@@ -409,9 +452,9 @@ components:
           example: "indoor"
         downloadInfos:
           type: array
-          description: 可下载文件列表（完成后非空）
+          description: 可下载文件列表（完成后非空），每项为预签名下载 URL
           items:
-            $ref: "#/components/schemas/FileInfo"
+            $ref: "#/components/schemas/UrlInfo"
 
     TaskListResponse:
       type: object

@@ -23,6 +23,14 @@ class TestTasks:
         body["externalCode"] = code
         return client.post("/tasks", json=body, headers={"projectId": "proj-01"})
 
+    def _upload_first_file(self, client, create_resp):
+        """上传第一个文件到本地端点，使 start 能通过文件存在检查。"""
+        upload_info = create_resp.json()["uploadInfos"][0]
+        url = upload_info["url"]
+        if url.startswith("/"):
+            client.put(url, content=b"dummy_data")
+        return create_resp
+
     def test_create_and_query(self, client):
         create_resp = self._create_task(client)
         task_id = create_resp.json()["taskId"]
@@ -39,6 +47,7 @@ class TestTasks:
 
     def test_start_task(self, client):
         create_resp = self._create_task(client)
+        self._upload_first_file(client, create_resp)
         task_id = create_resp.json()["taskId"]
 
         resp = client.post(f"/tasks/{task_id}/start", headers={"projectId": "proj-01"})
@@ -49,6 +58,7 @@ class TestTasks:
 
     def test_start_already_started(self, client):
         create_resp = self._create_task(client)
+        self._upload_first_file(client, create_resp)
         task_id = create_resp.json()["taskId"]
 
         client.post(f"/tasks/{task_id}/start", headers={"projectId": "proj-01"})
@@ -57,6 +67,7 @@ class TestTasks:
 
     def test_query_after_start(self, client):
         create_resp = self._create_task(client)
+        self._upload_first_file(client, create_resp)
         task_id = create_resp.json()["taskId"]
 
         client.post(f"/tasks/{task_id}/start", headers={"projectId": "proj-01"})
@@ -86,4 +97,4 @@ class TestTasks:
         data = resp.json()
         assert len(data["downloadInfos"]) == 1
         assert data["downloadInfos"][0]["fileName"] == "model.spz"
-        assert data["downloadInfos"][0]["fileRole"] == "compressed_model"
+        assert data["downloadInfos"][0]["method"] == "GET"

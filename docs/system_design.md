@@ -55,13 +55,17 @@
     │
     ▼
 创建任务 (POST /tasks)
-  状态: pending
-  入库: Task + TaskFile（上传文件记录）
+  入库: Task + TaskFile（元数据）
+  返回: uploadInfos（预签名上传 URL）
+    │
+    ▼
+客户端上传文件
+  按 uploadInfos 逐项 PUT 文件到 MinIO 或本地上传端点
     │
     ▼
 启动任务 (POST /tasks/{id}/start)
   状态: pending → processing
-  提交四阶段流水线到任务队列
+  检查文件存在 → 提交四阶段流水线
     │
     ▼
 Worker 执行流水线
@@ -86,7 +90,7 @@ Worker 执行流水线
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| id | string(32) | 主键，`时间戳ms + 随机后缀`，如 `1780614692192a3f4c` |
+| id | string(32) | 主键，Snowflake 递增纯数字，如 `332011480592384` |
 | projectId | string(20) | 项目标识 |
 | externalCode | string(256) | 外部系统唯一编号（只记录不校验） |
 | scene | enum | 场景类型：`commodity` / `indoor` / `outdoor` |
@@ -159,15 +163,17 @@ initializing (0%)
 
 | 方法 | 路径 | 鉴权 | 说明 |
 |------|------|------|------|
-| POST | /tasks | app_auth | 创建任务（JSON body 或 multipart） |
+| POST | /tasks | app_auth | 创建任务（JSON body），返回预签名上传 URL |
 | GET | /tasks | project_auth | 按 projectId 列出任务 |
-| POST | /tasks/{taskId}/start | project_auth | 启动流水线 |
-| GET | /tasks/{taskId} | project_auth | 查询状态和输出文件 |
-| GET | /tasks/{taskId}/download?file= | project_auth | 下载输出文件（支持 Query 鉴权） |
+| POST | /tasks/{taskId}/start | project_auth | 检查文件 → 启动流水线 |
+| GET | /tasks/{taskId} | project_auth | 查询状态和输出文件下载 URL |
+| GET | /tasks/{taskId}/download/{filename} | project_auth | 下载输出文件（支持 Query 鉴权） |
+| PUT | /tasks/{taskId}/upload/{filename} | app_auth | 本地上传文件（Docker 模式通过 MinIO 预签名 URL 直接上传） |
 | GET | /tasks/{taskId}/events | project_auth | SSE 实时进度（支持 Query 鉴权） |
 
-### 4.5 CreateTaskReq
+### 4.5 CreateTaskReq / CreateTaskRsp
 
+请求：
 ```json
 {
   "externalCode": "EXT-001",
@@ -182,6 +188,23 @@ initializing (0%)
   "scene": "indoor"
 }
 ```
+
+响应（uploadInfos 为上传 URL 列表）：
+```json
+{
+  "ret": { "code": 0, "msg": "success" },
+  "taskId": "332011480592384",
+  "uploadInfos": [{
+    "objectId": "scene.mp4",
+    "fileName": "scene.mp4",
+    "url": "/tasks/332011480592384/upload/scene.mp4",
+    "method": "PUT",
+    "headers": { "Authorization": "...", "Content-Type": "video/mp4" }
+  }]
+}
+```
+
+终端收到后按 uploadInfos 逐项 PUT 文件，再调用 start 启动流水线。
 
 ---
 

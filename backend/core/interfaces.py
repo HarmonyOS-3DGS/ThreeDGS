@@ -26,7 +26,11 @@ class StorageClient(Protocol):
         ...
 
     def get_presigned_url(self, object_name: str, expires: int = 3600) -> str:
-        """获取预签名访问 URL。"""
+        """获取预签名 GET URL（下载用）。"""
+        ...
+
+    def get_presigned_put_url(self, object_name: str, expires: int = 3600) -> str:
+        """获取预签名 PUT URL（上传用）。"""
         ...
 
     def delete_object(self, object_name: str) -> None:

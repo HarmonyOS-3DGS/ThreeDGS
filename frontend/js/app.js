@@ -48,46 +48,68 @@ if (uploadForm) {
             return;
         }
 
-        const formData = new FormData();
-        formData.append("externalCode", externalCode);
-        formData.append("scene", scene);
-
-        const metaList = [];
+        const fileInfos = [];
         for (const file of fileInput.files) {
             const buf = await file.arrayBuffer();
             const hash = await crypto.subtle.digest("SHA-256", buf);
             const sha256 = Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
-            metaList.push({
+            fileInfos.push({
                 fileName: file.name,
                 sha256: sha256,
                 contentLength: file.size,
                 fileUrl: "",
                 fileRole: fileType,
+                mimeType: file.type || "",
             });
-            formData.append("files", file);
         }
-        formData.append("filesMeta", JSON.stringify(metaList));
 
         try {
-            const res = await fetch(API, {
+            // Step 1: 创建任务，获取上传 URL
+            const res1 = await fetch(API, {
                 method: "POST",
-                headers: { "Authorization": AUTH_TOKEN, "projectId": projectId },
-                body: formData,
+                headers: { "Authorization": AUTH_TOKEN, "projectId": projectId, "Content-Type": "application/json" },
+                body: JSON.stringify({ externalCode, scene, fileInfos }),
             });
-            const data = await res.json();
-            if (res.ok) {
-                const taskId = data.taskId;
-                result.innerHTML = `
-                    <p style="color:#22c55e;">任务创建成功: <code>${taskId}</code></p>
-                    <button onclick="startTask('${projectId}','${taskId}', this)">启动训练</button>
-                    <span id="preview-status" style="margin-left:1rem;font-size:0.85rem;color:#64748b;"></span>
-                `;
-                // Start polling task status
-                pollTask(projectId, taskId, "preview-status");
-            } else {
+            const data = await res1.json();
+            if (!res1.ok) {
                 const msg = (data.detail?.ret?.msg) || data.detail || "创建失败";
                 result.innerHTML = `<p style="color:#ef4444;">${msg}</p>`;
+                btn.disabled = false;
+                btn.textContent = "创建任务";
+                return;
             }
+
+            const taskId = data.taskId;
+            result.innerHTML = `<p style="color:#22c55e;">创建成功: <code>${taskId}</code>，正在上传文件...</p>`;
+
+            // Step 2: 上传文件到预签名 URL
+            for (let i = 0; i < fileInput.files.length; i++) {
+                const file = fileInput.files[i];
+                const urlInfo = data.uploadInfos[i];
+                try {
+                    const uploadRes = await fetch(urlInfo.url, {
+                        method: urlInfo.method,
+                        headers: urlInfo.headers || {},
+                        body: file,
+                    });
+                    if (!uploadRes.ok) {
+                        throw new Error(`upload failed: ${uploadRes.status}`);
+                    }
+                } catch (uploadErr) {
+                    result.innerHTML = `<p style="color:#ef4444;">文件 ${file.name} 上传失败</p>
+                        <button onclick="startTask('${projectId}','${taskId}', this)">跳过上传/启动训练</button>`;
+                    btn.disabled = false;
+                    btn.textContent = "创建任务";
+                    return;
+                }
+            }
+
+            result.innerHTML = `
+                <p style="color:#22c55e;">任务创建成功: <code>${taskId}</code></p>
+                <button onclick="startTask('${projectId}','${taskId}', this)">启动训练</button>
+                <span id="preview-status" style="margin-left:1rem;font-size:0.85rem;color:#64748b;"></span>
+            `;
+            pollTask(projectId, taskId, "preview-status");
         } catch (err) {
             result.innerHTML = `<p style="color:#ef4444;">网络错误</p>`;
         }

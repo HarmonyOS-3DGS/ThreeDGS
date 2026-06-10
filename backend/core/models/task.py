@@ -2,17 +2,12 @@
 
 import enum
 from datetime import datetime
-from uuid import uuid4
 
 from sqlalchemy import Column, DateTime, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from backend.core.database import Base
-
-
-def _generate_task_id():
-    ts = int(datetime.utcnow().timestamp() * 1000)
-    return f"{ts}{uuid4().hex[:6]}"
+from backend.core.id_generator import generate_task_id as _generate_task_id
 
 
 class TaskStatus(enum.StrEnum):

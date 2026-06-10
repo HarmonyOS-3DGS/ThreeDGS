@@ -21,6 +21,16 @@ class FileInfo(BaseModel):
     mimeType: str | None = None
 
 
+class UrlInfo(BaseModel):
+    """上传/下载 URL 信息。"""
+
+    objectId: str
+    fileName: str
+    url: str
+    method: str = "PUT"
+    headers: dict[str, str] = {}
+
+
 class CreateTaskReq(BaseModel):
     externalCode: str = Field(..., max_length=256)
     fileInfos: list[FileInfo] = Field(..., min_length=1, max_length=3)
@@ -30,7 +40,7 @@ class CreateTaskReq(BaseModel):
 class CreateTaskRsp(BaseModel):
     ret: ConnectRet = ConnectRet()
     taskId: str
-    fileInfos: list[FileInfo]
+    uploadInfos: list[UrlInfo]
 
 
 class StartTaskRsp(BaseModel):
@@ -47,7 +57,7 @@ class GetTaskRsp(BaseModel):
     remainingTime: int
     scene: str
     errorMessage: str = ""
-    downloadInfos: list[FileInfo] = []
+    downloadInfos: list[UrlInfo] = []
 
 
 class TaskListResponse(BaseModel):

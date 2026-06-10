@@ -43,6 +43,20 @@ class TestStorageClient:
             result = storage.get_presigned_url("test/object.txt")
             assert result == "http://minio/presigned"
 
+    def test_get_presigned_put_url(self):
+        with patch("backend.core.minio_storage.Minio") as MockMinio:
+            mock_client = MagicMock()
+            MockMinio.return_value = mock_client
+            mock_client.bucket_exists.return_value = True
+            mock_client.presigned_put_object.return_value = "http://minio/put-presigned"
+
+            storage = MinioStorageClient()
+            result = storage.get_presigned_put_url("test/object.txt")
+            assert result == "http://minio/put-presigned"
+            mock_client.presigned_put_object.assert_called_once_with(
+                "gaussian", "test/object.txt", expires=3600
+            )
+
     def test_delete_object(self):
         with patch("backend.core.minio_storage.Minio") as MockMinio:
             mock_client = MagicMock()
