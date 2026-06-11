@@ -17,3 +17,4 @@ aiofiles==24.1.0
 sse-starlette==2.1.0
 uuid-utils==0.6.0
 ruff==0.14.0
+docker==7.1.0

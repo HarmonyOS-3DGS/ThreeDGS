@@ -108,11 +108,11 @@ paths:
         - name: taskId
           in: path
           required: true
-          description: 任务 ID（时间戳+随机后缀，如 1780612345678a3f4c）
+          description: 任务 ID（Snowflake 纯数字递增）
           schema:
             type: string
             maxLength: 32
-            example: "1780612345678"
+            example: "332011480592384"
       responses:
         "200":
           description: 启动成功
@@ -172,6 +172,8 @@ paths:
       tags:
         - fileTransfer
       operationId: uploadFile
+      security:
+        - app_auth: []
       parameters:
         - name: taskId
           in: path
@@ -204,6 +206,7 @@ paths:
     get:
       summary: 下载输出文件
       description: 下载任务的输出文件（SPZ/SOG）。Docker 模式 302 重定向到 MinIO 预签名 URL。
+      鉴权同时支持 Header 和 Query 参数（`projectId` 和 `Authorization`）。
       tags:
         - fileTransfer
       operationId: downloadFile
@@ -228,7 +231,20 @@ paths:
           description: 对象 ID，来自查询任务响应中 downloadInfos[].objectId
           schema:
             type: string
-          example: "tasks/1780612345678/compressed/model.spz"
+          example: "tasks/332011480592384/compressed/model.spz"
+        - name: projectId
+          in: query
+          required: false
+          description: 项目 ID（未提供时从 Header 读取）
+          schema:
+            type: string
+            maxLength: 20
+        - name: Authorization
+          in: query
+          required: false
+          description: 鉴权 Token（未提供时从 Header 读取，兼容 EventSource）
+          schema:
+            type: string
       responses:
         "200":
           description: 文件内容
@@ -400,8 +416,8 @@ components:
           $ref: "#/components/schemas/ConnectRet"
         taskId:
           type: string
-          description: 任务 ID
-          example: "1780612345678a3f4c"
+          description: 任务 ID（Snowflake 纯数字递增）
+          example: "332011480592384"
         uploadInfos:
           type: array
           description: 上传 URL 列表（客户端按此列表 PUT 文件）
@@ -428,7 +444,7 @@ components:
           $ref: "#/components/schemas/ConnectRet"
         taskId:
           type: string
-          example: "1780612345678"
+          example: "332011480592384"
         status:
           type: string
           enum: [pending, processing, completed, failed]

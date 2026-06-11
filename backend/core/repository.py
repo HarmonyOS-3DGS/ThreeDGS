@@ -21,6 +21,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
+from backend.core.config import settings
 from backend.core.database import SessionLocal, Task, TaskFile, TaskStatus
 
 logger = logging.getLogger(__name__)
@@ -91,7 +92,17 @@ class TaskRepository:
             if task:
                 task.current_stage = stage
                 task.progress = progress
-                task.remaining_time = 0 if status == "completed" else max(0, 15 - progress // 7)
+                task.remaining_time = (
+                    0
+                    if status == "completed"
+                    else max(
+                        0,
+                        settings.alg_expected_seconds
+                        - progress * settings.alg_expected_seconds // 100,
+                    )
+                    if settings.alg_enabled
+                    else max(0, 15 - progress // 7)
+                )
                 if status:
                     task.status = status
                 if error:

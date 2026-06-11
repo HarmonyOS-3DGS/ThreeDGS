@@ -22,6 +22,9 @@ services:
       - USE_LOCAL_STORAGE=false
       - LOCAL_STORAGE_DIR=/app/local_storage
       - API_KEY=${API_KEY:-}
+      - ALG_ENABLED=false
+      - ALG_EXPECTED_SECONDS=960
+      - ALG_MAX_SECONDS=3600
     depends_on:
       db:
         condition: service_healthy
@@ -51,6 +54,15 @@ services:
       - USE_LOCAL_STORAGE=false
       - LOCAL_STORAGE_DIR=/app/local_storage
       - API_KEY=${API_KEY:-}
+      - ALG_ENABLED=false
+      - ALG_IMAGE=alg_pipeline
+      - ALG_SCRIPT=alg_pipeline.pyc
+      - ALG_HOST_DATA_DIR=/data/3dgs
+      - ALG_OUTPUT_DIR=output
+      - ALG_PLY_NAME=point_cloud.ply
+      - ALG_PLY_SUBDIR=gaussian_splatting/out/train/grid_0_0/point_cloud
+      - ALG_EXPECTED_SECONDS=960
+      - ALG_MAX_SECONDS=3600
     depends_on:
       db:
         condition: service_healthy
@@ -60,6 +72,7 @@ services:
         condition: service_healthy
     volumes:
       - /data/3dgs/tasks:/app/local_storage/tasks
+      - /var/run/docker.sock:/var/run/docker.sock
 
   redis:
     image: redis:7-alpine

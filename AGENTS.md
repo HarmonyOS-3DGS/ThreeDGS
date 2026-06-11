@@ -131,6 +131,7 @@
 │           ├── colmap_sfm.py
 │           ├── train_gs.py
 │           ├── compress.py
+│           ├── external_algorithm.py  # 外部算法一体化（docker run + PLY 搜索）
 │           └── cleanup.py      # 过期 pending / completed 任务清理（Celery Beat）
 ├── frontend/                   # 静态前端（原生 HTML/JS/CSS，无构建工具）
 │   ├── index.html              # 上传页面（创建任务 + 启动训练）
@@ -208,6 +209,15 @@
 | `TASK_COMPLETED_TTL_DAYS` | `7` | 过期 completed 任务清理阈值（天） |
 | `DEFAULT_FPS` | `5` | 帧提取默认帧率 |
 | `DEFAULT_ITERATIONS` | `30000` | 3DGS 训练默认迭代次数 |
+| `ALG_ENABLED` | `false` | 是否使用外部算法一体化模式 |
+| `ALG_IMAGE` | `alg_pipeline` | 外部算法 Docker 镜像名 |
+| `ALG_SCRIPT` | `alg_pipeline.pyc` | 外部算法入口脚本 |
+| `ALG_OUTPUT_DIR` | `output` | 外部算法输出子目录 |
+| `ALG_PLY_NAME` | `point_cloud.ply` | 搜索的 PLY 文件名 |
+| `ALG_PLY_SUBDIR` | `gaussian_splatting/...` | PLY 搜索子路径 |
+| `ALG_HOST_DATA_DIR` | `/data/3dgs` | 宿主机数据盘路径 worker |
+| `ALG_EXPECTED_SECONDS` | `960` | 预计执行时间（秒，进度条计算用） |
+| `ALG_MAX_SECONDS` | `3600` | 最大超时时间（秒，Celery 硬限制） |
 
 ---
 
@@ -419,6 +429,28 @@ curl "http://localhost:8000/tasks/{task_id}/download?file=model.spz" \
 ---
 
 ## 流水线阶段与状态机
+
+### 两种运行模式
+
+通过 `ALG_ENABLED` 配置切换：
+
+| 模式 | 说明 | 各阶段 |
+|------|------|--------|
+| 默认（`false`） | 四阶段 Stub 流水线 | extracting → colmap → training → compressing |
+| 外部算法（`true`） | 单阶段一体化 Docker 调用 | training（docker run 阻塞执行 → 搜 PLY → 上传 MinIO） |
+
+### 外部算法模式流程
+
+```
+Worker 收到任务
+  └─ subprocess.run(["docker", "run", ...alg_image...])
+      └─ -v /data/3dgs:/data                 ← 数据盘全文挂载
+      └─ --input_dir /data/tasks/{id}         ← 算法读视频
+      └─ --output_dir /data/tasks/{id}/output ← 算法写产出
+  └─ 阻塞等待 docker run 退出
+  └─ output/alg_ply_subdir/ 下搜 point_cloud.ply（取最新）
+  └─ 上传 MinIO → 写 DB → completed
+```
 
 ### 外部状态（`TaskStatus`，对用户暴露）
 

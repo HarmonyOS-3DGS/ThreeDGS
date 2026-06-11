@@ -244,4 +244,30 @@ initializing (0%)
 | MinIO Python SDK | MinIO Java SDK |
 | SQLite / PostgreSQL | PostgreSQL |
 
+---
+
+## 8. 外部算法一体化模式
+
+通过 `ALG_ENABLED=true` 切换，Worker 通过 `docker run` 调用独立算法镜像：
+
+```
+Worker (Celery task)
+  └─ subprocess.run(["docker", "run", ...alg_image...])
+  └─ 等待退出 → 搜 PLY → 上传 MinIO → 写 DB → completed
+```
+
+配置项：
+
+| 配置项 | 说明 |
+|--------|------|
+| `ALG_ENABLED` | 模式开关 |
+| `ALG_IMAGE` | 算法 Docker 镜像 |
+| `ALG_SCRIPT` | 入口脚本 |
+| `ALG_OUTPUT_DIR` | 输出子目录 |
+| `ALG_PLY_NAME` | PLY 文件名 |
+| `ALG_PLY_SUBDIR` | PLY 搜索路径 |
+| `ALG_HOST_DATA_DIR` | 宿主机数据目录 |
+| `ALG_EXPECTED_SECONDS` | 预计执行时间（秒） |
+| `ALG_MAX_SECONDS` | 最大超时时间（秒） |
+
 完整接口契约见 `docs/openapi.yaml`，数据库设计见 `docs/database_design.md`。

@@ -218,7 +218,7 @@ def start_task(
     task.status = TaskStatus.PROCESSING.value
     task.current_stage = TaskStage.INITIALIZING.value
     task.progress = 0
-    task.remaining_time = 15
+    task.remaining_time = settings.alg_expected_seconds if settings.alg_enabled else 15
     db.commit()
 
     task_files = db.query(TaskFile).filter(TaskFile.task_id == task_id).all()
@@ -260,7 +260,7 @@ def start_task(
             status_code=400, detail={"ret": {"code": 400, "msg": "没有找到可处理的视频文件"}}
         )
 
-    return StartTaskRsp(remainingTime=15)
+    return StartTaskRsp(remainingTime=task.remaining_time)
 
 
 @router.get("/{task_id}", response_model=GetTaskRsp)

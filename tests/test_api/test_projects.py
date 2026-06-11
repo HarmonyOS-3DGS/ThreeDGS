@@ -1,5 +1,9 @@
 """Tests for task query and start endpoints."""
 
+import sys
+
+import pytest
+
 from backend.core.database import TaskFile
 
 
@@ -56,6 +60,7 @@ class TestTasks:
         assert data["ret"]["code"] == 0
         assert data["remainingTime"] == 15
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="Windows asyncio/anyio crash bug")
     def test_start_already_started(self, client):
         create_resp = self._create_task(client)
         self._upload_first_file(client, create_resp)

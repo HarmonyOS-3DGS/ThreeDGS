@@ -15,6 +15,7 @@ app = Celery(
         "backend.worker.tasks.compress",
         "backend.worker.tasks.pipeline",
         "backend.worker.tasks.cleanup",
+        "backend.worker.tasks.external_algorithm",
     ],
 )
 

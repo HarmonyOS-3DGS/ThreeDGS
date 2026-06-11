@@ -207,6 +207,8 @@ bash scripts/docker_test.sh
 | 压缩 | `compressing` | 格式转换压缩（stub） | ~3s |
 | 完成 | `completed` | 生成 SPZ/SOG 文件 | - |
 
+> **外部算法一体化**：设置 `ALG_ENABLED=true` 可切换为单阶段外部 Docker 镜像模式，由 Worker 通过 Docker SDK 调用。配置项见 `docker-compose.yml` worker 环境变量。
+
 **Stub 模式下总耗时约 15 秒**。
 
 ---

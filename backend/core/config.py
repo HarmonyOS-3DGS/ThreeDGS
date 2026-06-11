@@ -46,6 +46,17 @@ class Settings(BaseSettings):
     default_fps: int = Field(default=5)
     default_iterations: int = Field(default=30000)
 
+    # 外部算法（一体化模式）
+    alg_enabled: bool = Field(default=False)
+    alg_image: str = Field(default="alg_pipeline")
+    alg_script: str = Field(default="alg_pipeline.pyc")
+    alg_output_dir: str = Field(default="output")
+    alg_ply_name: str = Field(default="point_cloud.ply")
+    alg_ply_subdir: str = Field(default="gaussian_splatting/out/train/grid_0_0/point_cloud")
+    alg_expected_seconds: int = Field(default=960)
+    alg_max_seconds: int = Field(default=3600)
+    alg_host_data_dir: str = Field(default="/data/3dgs")
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
