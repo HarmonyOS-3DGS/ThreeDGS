@@ -1,11 +1,15 @@
 """MinIO 对象存储客户端封装。"""
 
+import logging
 from io import BytesIO
+from urllib.request import Request, urlopen
 
 from minio import Minio
 from minio.error import S3Error
 
 from backend.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class MinioStorageClient:
@@ -28,27 +32,44 @@ class MinioStorageClient:
         return self._client
 
     def _ensure_bucket(self):
-        """确保目标存储桶存在并配置 CORS。"""
+        """确保目标存储桶存在并配置 CORS 跨域访问。"""
         if not self.client.bucket_exists(self.bucket):
             self.client.make_bucket(self.bucket)
-        # 每次启动确保 CORS 配置允许浏览器跨域访问
+            logger.info("MinIO bucket created: %s", self.bucket)
+        self._configure_cors()
+
+    def _configure_cors(self):
+        """通过 MinIO API 配置 CORS，允许浏览器跨域上传/下载。"""
+        cors_xml = (
+            '<CORSConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">'
+            "<CORSRule>"
+            "<AllowedOrigin>*</AllowedOrigin>"
+            "<AllowedMethod>GET</AllowedMethod>"
+            "<AllowedMethod>PUT</AllowedMethod>"
+            "<AllowedMethod>POST</AllowedMethod>"
+            "<AllowedMethod>DELETE</AllowedMethod>"
+            "<AllowedMethod>HEAD</AllowedMethod>"
+            "<AllowedHeader>*</AllowedHeader>"
+            "<ExposeHeader>ETag</ExposeHeader>"
+            "<ExposeHeader>Content-Type</ExposeHeader>"
+            "<MaxAgeSeconds>3600</MaxAgeSeconds>"
+            "</CORSRule>"
+            "</CORSConfiguration>"
+        )
         try:
-            self.client.set_bucket_cors(
-                self.bucket,
-                {
-                    "CORSRules": [
-                        {
-                            "AllowedOrigins": ["*"],
-                            "AllowedMethods": ["GET", "PUT", "POST", "DELETE", "HEAD"],
-                            "AllowedHeaders": ["*"],
-                            "ExposeHeaders": ["ETag", "Content-Type"],
-                            "MaxAgeSeconds": 3600,
-                        }
-                    ]
-                },
+            # 通过 MinIO 内部 HTTP 客户端发送 PUT 请求配置 CORS
+            url = f"{self.client._base_url}/{self.bucket}?cors"
+            headers = {"Content-Type": "application/xml"}
+            region = self.client._region_map.get("")
+            signed_headers = self.client._build_headers(
+                "PUT", region, url, headers, cors_xml.encode(), None, None
             )
-        except Exception:
-            pass
+            req = Request(url, data=cors_xml.encode(), headers=signed_headers, method="PUT")
+            urlopen(req)
+            logger.info("MinIO CORS configured: ALLOW * GET/PUT/POST/DELETE/HEAD")
+        except Exception as e:
+            logger.warning("MinIO CORS 配置失败: %s", e)
+            logger.warning("请手动配置: mc admin config set local api cors_allow_origin='*'")
 
     def upload_file(self, object_name: str, file_path: str) -> str:
         """上传本地文件到 MinIO，返回对象路径。"""

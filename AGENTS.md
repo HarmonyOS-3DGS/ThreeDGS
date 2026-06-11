@@ -198,6 +198,7 @@
 | `MINIO_SECRET_KEY` | `minioadmin` | MinIO 密码 |
 | `MINIO_BUCKET` | `gaussian` | MinIO 存储桶 |
 | `MINIO_SECURE` | `false` | MinIO 是否使用 HTTPS |
+| `MINIO_PUBLIC_ENDPOINT` | `""` | MinIO 外部访问地址（预签名 URL 用，留空则用 `MINIO_ENDPOINT`） |
 | `USE_LOCAL_STORAGE` | `false` | 是否强制使用本地文件存储 |
 | `LOCAL_STORAGE_DIR` | `./local_storage` | 本地存储根目录 |
 | `API_KEY` | `""` | 鉴权 Key（留空关闭鉴权） |
@@ -515,7 +516,20 @@ python scripts/integration_test.py
 
 0. **Git 提交规则**：
    - Author 和 Committer **必须且仅能为** `fryandev <268098688+fryandev@users.noreply.github.com>`。禁止使用任何其他姓名或邮箱，禁止出现真实身份信息。
-   - **禁止自动提交代码**。只在用户明确要求提交时才提交。提交 message 需基于代码最终 diff 内容概括，而非对话过程。未经用户确认不得执行 commit。
+    - **禁止自动提交代码**。只在用户明确要求提交时才提交。提交 message 需基于代码最终 diff 内容概括，而非对话过程。未经用户确认不得执行 commit。
+0.1 **测试覆盖**：
+    - 每次代码修改后必须运行 `pytest` 验证，确保已有测试通过
+    - 新增功能/分支/异常路径必须添加对应测试用例
+    - 修改接口/模型后检查相关测试代码是否需要同步修改
+    - 目标覆盖率不低于 80%
+0.2 **代码格式化**：
+    - 每次修改完成后必须执行 `ruff format .` 格式化代码
+    - 必须执行 `ruff check .` 检查代码规范，确保零错误
+    - 检查通过后方可提交
+0.3 **提交前确认**：
+    - 最终提交前必须询问用户是否已启动服务测试通过
+    - 用户确认服务测试正常后才能执行 commit 和 push
+    - 涉及 Docker 部署的改动，需确认 `docker compose up --build -d` 和 `docker_test.sh` 均通过
 
 1. **语言**：项目注释、文档、README、前端 UI 文本均使用 **中文**。代码中的字符串常量（如状态值、错误信息）也使用中文。
 
@@ -585,9 +599,18 @@ rm -f test.db
 pytest -v
 pytest --cov=backend --cov-report=term-missing
 
+# 代码格式化
+ruff format .
+ruff check .
+ruff check --fix .
+
 # 集成测试
 python scripts/real_test.py
 python scripts/integration_test.py
+
+# Docker 构建 + 端到端测试
+docker compose up --build -d
+bash scripts/docker_test.sh
 
 # Docker 启动
 docker-compose up --build -d

@@ -173,8 +173,15 @@ pytest -v
 # 带覆盖率
 pytest --cov=backend --cov-report=term-missing
 
+# 代码格式化与规范检查
+ruff format .
+ruff check .
+
 # 真实端到端集成测试（启动真实 API + Worker，发送 HTTP 请求）
 python scripts/real_test.py
+
+# Docker 端到端测试（需先 docker compose up -d）
+bash scripts/docker_test.sh
 ```
 
 ---

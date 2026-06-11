@@ -1,5 +1,6 @@
 """任务管理路由：创建、列表、启动、查询、下载。"""
 
+import logging
 import os
 from urllib.parse import urlencode
 
@@ -28,6 +29,7 @@ from backend.core.storage import storage
 from backend.core.task_publisher import submit_pipeline
 
 router = APIRouter(prefix="/tasks", tags=["taskManagement"])
+logger = logging.getLogger(__name__)
 
 
 def _safe_filename(filename: str) -> str:
@@ -42,9 +44,11 @@ def _gen_upload_url(task_id: str, fi: FileInfo) -> UrlInfo:
     try:
         url = storage.get_presigned_put_url(object_name, expires=3600)
         headers = {}
+        logger.info("upload url: MinIO presigned PUT %s", url)
     except Exception:
         url = f"/tasks/{task_id}/upload/{safe_name}"
         headers = {"Authorization": settings.api_key} if settings.api_key else {}
+        logger.info("upload url: local API %s", url)
     return UrlInfo(
         objectId=safe_name,
         fileName=safe_name,
@@ -156,6 +160,7 @@ async def upload_file(
         raise HTTPException(status_code=400, detail={"ret": {"code": 400, "msg": "文件已存在"}})
 
     content = await request.body()
+    logger.info("upload: task=%s file=%s size=%d", task_id, safe_name, len(content))
 
     # 魔数校验
     detected_mime = detect_mime(content)
@@ -181,12 +186,13 @@ async def upload_file(
     async with aiofiles.open(local_path, "wb") as f:
         await f.write(content)
 
-    # Docker 模式：同步上传到 MinIO
+    # 同步上传到对象存储
     object_name = f"tasks/{task_id}/{safe_name}"
     try:
         storage.upload_file(object_name, local_path)
+        logger.info("uploaded to MinIO: %s", object_name)
     except Exception:
-        pass
+        logger.warning("MinIO upload failed: %s", object_name)
 
     return {"ret": {"code": 0, "msg": "success"}, "fileName": safe_name, "size": len(content)}
 
@@ -222,15 +228,17 @@ def start_task(
     )
 
     if first_video:
-        # 确保文件已上传并下载到共享卷
+        logger.info("start task=%s file=%s", task_id, first_video.fileUrl)
         remote_path = first_video.fileUrl
         local_video = os.path.join(TASK_OUTPUT_DIR, str(task_id), os.path.basename(remote_path))
         if not os.path.exists(local_video):
+            logger.info("start: downloading from storage %s -> %s", remote_path, local_video)
             try:
                 storage.download_file(remote_path, local_video)
             except Exception:
-                pass
+                logger.warning("start: download failed %s", remote_path)
         if not os.path.exists(local_video):
+            logger.error("start: file not found %s", local_video)
             task.status = TaskStatus.FAILED.value
             task.error_message = "文件尚未上传"
             db.commit()

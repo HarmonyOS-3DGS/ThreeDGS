@@ -15,12 +15,15 @@
   TaskRepository.update_progress(task_id, "training", 50, status="processing")
 """
 
+import logging
 import os
 from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
 from backend.core.database import SessionLocal, Task, TaskFile, TaskStatus
+
+logger = logging.getLogger(__name__)
 
 
 class TaskRepository:
@@ -96,6 +99,13 @@ class TaskRepository:
                 if status == "completed":
                     task.completed_at = datetime.utcnow()
                 db.commit()
+                logger.info(
+                    "task=%s stage=%s progress=%d status=%s",
+                    task_id,
+                    stage,
+                    progress,
+                    status or "-",
+                )
         finally:
             db.close()
 
