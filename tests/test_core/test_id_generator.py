@@ -1,4 +1,5 @@
 """Tests for id_generator — Snowflake ID generation."""
+
 import threading
 import time
 

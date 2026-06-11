@@ -1,4 +1,5 @@
 """Tests for LocalStorageClient."""
+
 import os
 import tempfile
 from pathlib import Path

@@ -75,10 +75,15 @@ class TestCreateTask:
 
     def test_create_with_multiple_files(self, client):
         body = self._create_body()
-        body["fileInfos"].append({
-            "fileName": "frame_001.jpg", "sha256": "", "contentLength": 0,
-            "fileUrl": "", "fileRole": "source_images",
-        })
+        body["fileInfos"].append(
+            {
+                "fileName": "frame_001.jpg",
+                "sha256": "",
+                "contentLength": 0,
+                "fileUrl": "",
+                "fileRole": "source_images",
+            }
+        )
         resp = client.post("/tasks", json=body, headers={"projectId": "proj-01"})
         assert resp.status_code == 200
         assert len(resp.json()["uploadInfos"]) == 2
@@ -91,8 +96,9 @@ class TestCreateTask:
         assert start.status_code == 400
 
     def test_download_not_found(self, client):
-        resp = client.get("/tasks/999999/download/nonexistent.spz",
-                          headers={"projectId": "proj-01"})
+        resp = client.get(
+            "/tasks/999999/download/nonexistent.spz", headers={"projectId": "proj-01"}
+        )
         assert resp.status_code == 404
 
     def test_uploadinfos_has_objectid(self, client):

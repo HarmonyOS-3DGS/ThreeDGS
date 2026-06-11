@@ -28,9 +28,27 @@ class MinioStorageClient:
         return self._client
 
     def _ensure_bucket(self):
-        """确保目标存储桶存在。"""
+        """确保目标存储桶存在并配置 CORS。"""
         if not self.client.bucket_exists(self.bucket):
             self.client.make_bucket(self.bucket)
+        # 每次启动确保 CORS 配置允许浏览器跨域访问
+        try:
+            self.client.set_bucket_cors(
+                self.bucket,
+                {
+                    "CORSRules": [
+                        {
+                            "AllowedOrigins": ["*"],
+                            "AllowedMethods": ["GET", "PUT", "POST", "DELETE", "HEAD"],
+                            "AllowedHeaders": ["*"],
+                            "ExposeHeaders": ["ETag", "Content-Type"],
+                            "MaxAgeSeconds": 3600,
+                        }
+                    ]
+                },
+            )
+        except Exception:
+            pass
 
     def upload_file(self, object_name: str, file_path: str) -> str:
         """上传本地文件到 MinIO，返回对象路径。"""

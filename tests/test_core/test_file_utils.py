@@ -1,4 +1,5 @@
 """Tests for file_utils — magic bytes detection."""
+
 from backend.core.file_utils import detect_mime
 
 
