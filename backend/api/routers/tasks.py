@@ -36,7 +36,7 @@ def _safe_filename(filename: str) -> str:
 
 
 def _gen_upload_url(task_id: str, fi: FileInfo) -> UrlInfo:
-    """为单个文件生成预签名上传 URL。"""
+    """生成上传 URL：MinIO 模式返回预签名 PUT URL，本地模式返回 API 端点。"""
     safe_name = _safe_filename(fi.fileName)
     object_name = f"tasks/{task_id}/{safe_name}"
     try:
@@ -58,7 +58,7 @@ def _gen_upload_url(task_id: str, fi: FileInfo) -> UrlInfo:
 
 
 def _gen_download_url(task_id: str, tf: TaskFile, project_id: str = "") -> UrlInfo:
-    """为输出文件生成预签名下载 URL。"""
+    """生成下载 URL：MinIO 模式返回预签名 GET URL，本地模式返回 API 端点。"""
     try:
         url = storage.get_presigned_url(tf.fileUrl, expires=3600)
     except Exception:
@@ -157,7 +157,7 @@ async def upload_file(
 
     content = await request.body()
 
-    # 魔数校验：对比 fileRole
+    # 魔数校验
     detected_mime = detect_mime(content)
     if detected_mime:
         task_file = (
@@ -180,6 +180,13 @@ async def upload_file(
 
     async with aiofiles.open(local_path, "wb") as f:
         await f.write(content)
+
+    # Docker 模式：同步上传到 MinIO
+    object_name = f"tasks/{task_id}/{safe_name}"
+    try:
+        storage.upload_file(object_name, local_path)
+    except Exception:
+        pass
 
     return {"ret": {"code": 0, "msg": "success"}, "fileName": safe_name, "size": len(content)}
 

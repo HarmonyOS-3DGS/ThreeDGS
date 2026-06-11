@@ -44,11 +44,20 @@ class MinioStorageClient:
 
     def get_presigned_url(self, object_name: str, expires: int = 3600) -> str:
         """生成对象的预签名 GET URL（下载用）。"""
-        return self.client.presigned_get_object(self.bucket, object_name, expires=expires)
+        url = self.client.presigned_get_object(self.bucket, object_name, expires=expires)
+        return self._replace_endpoint(url)
 
     def get_presigned_put_url(self, object_name: str, expires: int = 3600) -> str:
         """生成对象的预签名 PUT URL（上传用）。"""
-        return self.client.presigned_put_object(self.bucket, object_name, expires=expires)
+        url = self.client.presigned_put_object(self.bucket, object_name, expires=expires)
+        return self._replace_endpoint(url)
+
+    def _replace_endpoint(self, url: str) -> str:
+        """如果配置了 minio_public_endpoint，替换为外部可访问地址。"""
+        public = getattr(settings, "minio_public_endpoint", "")
+        if public and settings.minio_endpoint in url:
+            return url.replace(settings.minio_endpoint, public)
+        return url
 
     def delete_object(self, object_name: str) -> None:
         """从 MinIO 删除对象。"""

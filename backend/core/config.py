@@ -17,6 +17,7 @@ class Settings(BaseSettings):
 
     # MinIO
     minio_endpoint: str = Field(default="localhost:9000")
+    minio_public_endpoint: str = Field(default="")
     minio_access_key: str = Field(default="minioadmin")
     minio_secret_key: str = Field(default="minioadmin")
     minio_bucket: str = Field(default="gaussian")
