@@ -1,6 +1,7 @@
 """MinIO 对象存储客户端封装。"""
 
 import logging
+from datetime import timedelta
 from io import BytesIO
 from urllib.request import Request, urlopen
 
@@ -17,6 +18,7 @@ class MinioStorageClient:
 
     def __init__(self):
         self._client = None
+        self._presign_client = None
         self.bucket = settings.minio_bucket
 
     @property
@@ -30,6 +32,28 @@ class MinioStorageClient:
             )
             self._ensure_bucket()
         return self._client
+
+    @property
+    def presign_client(self):
+        """用于生成预签名 URL 的客户端。若配置了公网端点，使用公网端点签名。
+
+        AWS Signature V4 的签名包含 Host 头，事后替换 hostname 会导致签名不匹配。
+        此处直接使用正确的 endpoint 生成签名，确保浏览器可直连 MinIO。
+        """
+        if self._presign_client is not None:
+            return self._presign_client
+        public = getattr(settings, "minio_public_endpoint", "")
+        endpoint = public or settings.minio_endpoint
+        if endpoint == settings.minio_endpoint:
+            self._presign_client = self.client
+        else:
+            self._presign_client = Minio(
+                endpoint,
+                access_key=settings.minio_access_key,
+                secret_key=settings.minio_secret_key,
+                secure=settings.minio_secure,
+            )
+        return self._presign_client
 
     def _ensure_bucket(self):
         """确保目标存储桶存在并配置 CORS 跨域访问。"""
@@ -83,20 +107,16 @@ class MinioStorageClient:
 
     def get_presigned_url(self, object_name: str, expires: int = 3600) -> str:
         """生成对象的预签名 GET URL（下载用）。"""
-        url = self.client.presigned_get_object(self.bucket, object_name, expires=expires)
-        return self._replace_endpoint(url)
+        return self.presign_client.presigned_get_object(
+            self.bucket, object_name, expires=timedelta(seconds=expires)
+        )
 
     def get_presigned_put_url(self, object_name: str, expires: int = 3600) -> str:
         """生成对象的预签名 PUT URL（上传用）。"""
-        url = self.client.presigned_put_object(self.bucket, object_name, expires=expires)
-        return self._replace_endpoint(url)
+        return self.presign_client.presigned_put_object(
+            self.bucket, object_name, expires=timedelta(seconds=expires)
+        )
 
-    def _replace_endpoint(self, url: str) -> str:
-        """如果配置了 minio_public_endpoint，替换为外部可访问地址。"""
-        public = getattr(settings, "minio_public_endpoint", "")
-        if public and settings.minio_endpoint in url:
-            return url.replace(settings.minio_endpoint, public)
-        return url
 
     def delete_object(self, object_name: str) -> None:
         """从 MinIO 删除对象。"""

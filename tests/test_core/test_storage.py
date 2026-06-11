@@ -42,6 +42,9 @@ class TestStorageClient:
             storage = MinioStorageClient()
             result = storage.get_presigned_url("test/object.txt")
             assert result == "http://minio/presigned"
+            mock_client.presigned_get_object.assert_called_once()
+            args, kwargs = mock_client.presigned_get_object.call_args
+            assert kwargs["expires"].seconds == 3600
 
     def test_get_presigned_put_url(self):
         with patch("backend.core.minio_storage.Minio") as MockMinio:
@@ -53,9 +56,10 @@ class TestStorageClient:
             storage = MinioStorageClient()
             result = storage.get_presigned_put_url("test/object.txt")
             assert result == "http://minio/put-presigned"
-            mock_client.presigned_put_object.assert_called_once_with(
-                "gaussian", "test/object.txt", expires=3600
-            )
+            mock_client.presigned_put_object.assert_called_once()
+            args, kwargs = mock_client.presigned_put_object.call_args
+            assert args == ("gaussian", "test/object.txt")
+            assert kwargs["expires"].seconds == 3600
 
     def test_delete_object(self):
         with patch("backend.core.minio_storage.Minio") as MockMinio:
