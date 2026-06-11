@@ -50,9 +50,12 @@ if (uploadForm) {
 
         const fileInfos = [];
         for (const file of fileInput.files) {
-            const buf = await file.arrayBuffer();
-            const hash = await crypto.subtle.digest("SHA-256", buf);
-            const sha256 = Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
+            let sha256 = "";
+            if (window.crypto && window.crypto.subtle) {
+                const buf = await file.arrayBuffer();
+                const hash = await crypto.subtle.digest("SHA-256", buf);
+                sha256 = Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
+            }
             fileInfos.push({
                 fileName: file.name,
                 sha256: sha256,
