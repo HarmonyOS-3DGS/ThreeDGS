@@ -44,3 +44,11 @@ todo/
 .claude/
 openspec/
 claude.md
+
+# npm artifacts (used only once for 3D viewer deps)
+node_modules/
+package.json
+package-lock.json
+
+# AI tooling
+.codegraph/

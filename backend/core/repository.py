@@ -115,7 +115,7 @@ class TaskRepository:
                     task_id,
                     stage,
                     progress,
-                    status or "-",
+                    task.status,
                 )
         finally:
             db.close()

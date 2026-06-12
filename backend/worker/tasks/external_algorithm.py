@@ -88,8 +88,7 @@ def run_external_algorithm(self, task_id: str, video_path: str):
             image=settings.alg_image,
             command=docker_cmd,
             volumes=volumes,
-            remove=True,
-            detach=False,
+            detach=True,
             stdin_open=False,
             tty=False,
             privileged=True,
@@ -105,12 +104,29 @@ def run_external_algorithm(self, task_id: str, video_path: str):
                 "NVIDIA_VISIBLE_DEVICES": "all",
             },
         )
-        exit_code = 0
-        logs = (
-            container.logs(stderr=True).decode("utf-8", errors="replace")
-            if hasattr(container, "logs")
-            else ""
-        )
+
+        logs_lines: list[str] = []
+
+        def stream_logs():
+            for line in container.logs(stream=True, follow=True):
+                text = line.decode("utf-8", errors="replace").rstrip()
+                if text:
+                    logger.info("alg: %s", text)
+                    logs_lines.append(text)
+
+        log_thread = threading.Thread(target=stream_logs, daemon=True)
+        log_thread.start()
+
+        result = container.wait()
+        exit_code = result.get("StatusCode", 0)
+        log_thread.join(timeout=5)
+        logs = "\n".join(logs_lines)
+
+        try:
+            container.remove()
+        except Exception:
+            pass
+
     except docker.errors.ContainerError as e:
         exit_code = e.exit_status
         logs = str(e)
