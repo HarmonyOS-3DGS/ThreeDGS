@@ -103,3 +103,47 @@ class TestTasks:
         assert len(data["downloadInfos"]) == 1
         assert data["downloadInfos"][0]["fileName"] == "model.spz"
         assert data["downloadInfos"][0]["method"] == "GET"
+
+    def test_query_raw_model_in_downloads(self, client, db_session):
+        create_resp = self._create_task(client)
+        task_id = create_resp.json()["taskId"]
+
+        tf = TaskFile(
+            task_id=task_id,
+            fileName="model.ply",
+            sha256="",
+            contentLength=200,
+            fileUrl="/tmp/model.ply",
+            fileRole="raw_model",
+            mimeType="application/octet-stream",
+        )
+        db_session.add(tf)
+        db_session.commit()
+
+        resp = client.get(f"/tasks/{task_id}", headers={"projectId": "proj-01"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["downloadInfos"]) == 1
+        assert data["downloadInfos"][0]["fileName"] == "model.ply"
+
+    def test_query_mixed_roles(self, client, db_session):
+        create_resp = self._create_task(client)
+        task_id = create_resp.json()["taskId"]
+
+        for role, fname in [("raw_model", "model.ply"), ("compressed_model", "model.spz")]:
+            tf = TaskFile(
+                task_id=task_id,
+                fileName=fname,
+                sha256="",
+                contentLength=100,
+                fileUrl=f"/tmp/{fname}",
+                fileRole=role,
+                mimeType="application/octet-stream",
+            )
+            db_session.add(tf)
+        db_session.commit()
+
+        resp = client.get(f"/tasks/{task_id}", headers={"projectId": "proj-01"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["downloadInfos"]) == 2

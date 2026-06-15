@@ -50,7 +50,7 @@
 | `sha256` | `String(64)` | NOT NULL | 文件 SHA-256 哈希值 |
 | `contentLength` | `Integer` | NOT NULL | 文件大小（字节） |
 | `fileUrl` | `String(1024)` | NOT NULL | 文件存储路径（本地绝对路径或 MinIO 对象名） |
-| `fileRole` | `String(50)` | NOT NULL, DEFAULT `'source_video'` | 文件角色：`source_video` / `source_images` / `compressed_model` / `pose_data` |
+| `fileRole` | `String(50)` | NOT NULL, DEFAULT `'source_video'` | 文件角色：`source_video` / `source_images` / `compressed_model` / `raw_model` / `pose_data` |
 | `mimeType` | `String(128)` | NULLABLE | MIME 类型，如 `video/mp4`、`image/png` |
 
 **关系**：`TaskFile.task` → `Task`（多对一）
@@ -86,10 +86,11 @@
 |--------|------|------|
 | `source_video` | 用户上传的视频 | 前端创建任务 |
 | `source_images` | 用户上传的图片集 | 前端创建任务 |
-| `compressed_model` | 最终压缩模型输出（SPZ/SOG） | compress 阶段写入 |
+| `compressed_model` | 最终压缩模型输出（SPZ/SOG） | compress / finalize 阶段写入 |
+| `raw_model` | 原始 PLY 模型输出（未压缩） | finalize 阶段写入 |
 | `pose_data` | 用户上传的位姿文件（预留） | 前端创建任务 |
 
-> MVP 阶段仅使用前三个，`pose_data` 和其余角色按需追加。
+> MVP 阶段使用的角色：`source_video`、`source_images`、`compressed_model`、`raw_model`。`pose_data` 和其余角色按需追加。
 
 ---
 

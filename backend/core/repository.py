@@ -59,15 +59,16 @@ class TaskRepository:
         self.db.add(task)
         return task
 
-    def get_output_files(self, task_id: str) -> list[TaskFile]:
+    def get_output_files(self, task_id: str, roles: set[str] | None = None) -> list[TaskFile]:
+        roles = roles or {"raw_model", "compressed_model"}
         return (
             self.db.query(TaskFile)
-            .filter(TaskFile.task_id == task_id, TaskFile.fileRole == "compressed_model")
+            .filter(TaskFile.task_id == task_id, TaskFile.fileRole.in_(roles))
             .all()
         )
 
     def find_file_by_name(
-        self, task_id: str, filename: str, role: str = "compressed_model"
+        self, task_id: str, filename: str, role: str = "raw_model"
     ) -> TaskFile | None:
         return (
             self.db.query(TaskFile)
@@ -122,7 +123,11 @@ class TaskRepository:
 
     @staticmethod
     def add_output_file(
-        task_id: str, local_path: str, mime: str, storage_url: str | None = None
+        task_id: str,
+        local_path: str,
+        mime: str,
+        storage_url: str | None = None,
+        file_role: str = "raw_model",
     ) -> TaskFile | None:
         db = SessionLocal()
         try:
@@ -132,7 +137,7 @@ class TaskRepository:
                 sha256="",
                 contentLength=os.path.getsize(local_path),
                 fileUrl=storage_url or local_path,
-                fileRole="compressed_model",
+                fileRole=file_role,
                 mimeType=mime,
             )
             db.add(tf)

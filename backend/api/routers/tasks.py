@@ -276,11 +276,12 @@ def query_task(
         raise HTTPException(status_code=404, detail={"ret": {"code": 404, "msg": "Task not found"}})
 
     download_infos = []
+    output_roles = {"raw_model", "compressed_model"}
     output_files = (
         db.query(TaskFile)
         .filter(
             TaskFile.task_id == task.id,
-            TaskFile.fileRole == "compressed_model",
+            TaskFile.fileRole.in_(output_roles),
         )
         .all()
     )
@@ -328,8 +329,8 @@ def download_file(
         db.query(TaskFile)
         .filter(
             TaskFile.task_id == task_id,
-            TaskFile.fileRole == "compressed_model",
             TaskFile.fileName == safe_name,
+            TaskFile.fileRole.in_({"raw_model", "compressed_model"}),
         )
         .first()
     )
@@ -340,7 +341,7 @@ def download_file(
         except Exception:
             pass
 
-    fpath = os.path.join(TASK_OUTPUT_DIR, str(task.id), "compressed", safe_name)
+    fpath = os.path.join(TASK_OUTPUT_DIR, str(task.id), "output", safe_name)
     if not os.path.isfile(fpath):
         raise HTTPException(status_code=404, detail={"ret": {"code": 404, "msg": "File not found"}})
 

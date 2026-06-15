@@ -12,7 +12,7 @@ app = Celery(
         "backend.worker.tasks.extract_frames",
         "backend.worker.tasks.colmap_sfm",
         "backend.worker.tasks.train_gs",
-        "backend.worker.tasks.compress",
+        "backend.worker.tasks.finalize",
         "backend.worker.tasks.pipeline",
         "backend.worker.tasks.cleanup",
         "backend.worker.tasks.external_algorithm",

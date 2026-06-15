@@ -27,23 +27,6 @@ def _find_newest_ply(search_dir: str, filename: str) -> str | None:
     return max(results, key=os.path.getmtime)
 
 
-def _add_output(task_id: str, ply_path: str) -> bool:
-    """将 PLY 写入 DB 并上传 MinIO，返回是否成功。"""
-    object_name = f"tasks/{task_id}/compressed/{os.path.basename(ply_path)}"
-    try:
-        from backend.core.storage import storage
-
-        storage.upload_file(object_name, ply_path)
-        file_url = object_name
-    except Exception as e:
-        logger.warning("MinIO upload failed: %s", e)
-        file_url = ply_path
-    result = TaskRepository.add_output_file(
-        task_id, ply_path, "application/octet-stream", storage_url=file_url
-    )
-    return result is not None
-
-
 @app.task(bind=True, time_limit=settings.alg_max_seconds)
 def run_external_algorithm(self, task_id: str, video_path: str):
     """通过 Docker SDK 执行外部算法镜像，等待退出，收集 PLY 结果。"""
@@ -159,12 +142,4 @@ def run_external_algorithm(self, task_id: str, video_path: str):
         return {"task_id": task_id, "error": "PLY not found"}
 
     logger.info("alg found PLY: %s", ply_path)
-    if not _add_output(task_id, ply_path):
-        TaskRepository.update_progress(
-            task_id, "training", 95, status="failed", error="输出文件保存失败"
-        )
-        return {"task_id": task_id, "error": "output save failed"}
-
-    TaskRepository.update_progress(task_id, "completed", 100, status="completed")
-    logger.info("alg completed task=%s", task_id)
-    return {"task_id": task_id, "ply_path": ply_path}
+    return {"task_id": task_id, "model_path": ply_path}

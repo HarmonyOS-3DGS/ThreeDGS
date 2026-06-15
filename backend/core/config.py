@@ -2,8 +2,11 @@
 
 import os
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
+
+VALID_OUTPUT_TYPES = {"raw_model", "spz", "sog"}
+COMPRESSIBLE_FORMATS = {"spz", "sog"}
 
 
 class Settings(BaseSettings):
@@ -46,6 +49,9 @@ class Settings(BaseSettings):
     default_fps: int = Field(default=5)
     default_iterations: int = Field(default=30000)
 
+    # 输出类型选择
+    output_types: list[str] = Field(default=["raw_model"])
+
     # 外部算法（一体化模式）
     alg_enabled: bool = Field(default=False)
     alg_image: str = Field(default="alg_pipeline")
@@ -60,6 +66,22 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+
+    @field_validator("output_types", mode="before")
+    @classmethod
+    def _split_list(cls, v):
+        """支持环境变量传入逗号分隔字符串（如 `OUTPUT_TYPES=raw_model,spz,sog`）。"""
+        if isinstance(v, str):
+            return [x.strip() for x in v.split(",") if x.strip()]
+        return v
+
+    @field_validator("output_types")
+    @classmethod
+    def _validate_output_types(cls, v):
+        for t in v:
+            if t not in VALID_OUTPUT_TYPES:
+                raise ValueError(f"无效输出类型 '{t}'，支持: {VALID_OUTPUT_TYPES}")
+        return v
 
 
 settings = Settings()

@@ -25,6 +25,7 @@ services:
       - ALG_ENABLED=false
       - ALG_EXPECTED_SECONDS=960
       - ALG_MAX_SECONDS=3600
+      - OUTPUT_TYPES=${OUTPUT_TYPES:-raw_model}
     depends_on:
       db:
         condition: service_healthy
@@ -63,6 +64,7 @@ services:
       - ALG_PLY_SUBDIR=gaussian_splatting/out/train/grid_0_0/point_cloud
       - ALG_EXPECTED_SECONDS=960
       - ALG_MAX_SECONDS=3600
+      - OUTPUT_TYPES=${OUTPUT_TYPES:-raw_model}
     depends_on:
       db:
         condition: service_healthy

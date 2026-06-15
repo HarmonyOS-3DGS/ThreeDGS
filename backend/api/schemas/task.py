@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-VALID_FILE_ROLES = {"source_video", "source_images", "compressed_model", "pose_data"}
+VALID_FILE_ROLES = {"source_video", "source_images", "compressed_model", "pose_data", "raw_model"}
 
 
 class ConnectRet(BaseModel):

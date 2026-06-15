@@ -111,7 +111,7 @@ Worker 执行流水线
 | sha256 | string(64) | 文件 SHA-256 |
 | contentLength | int | 文件大小（字节） |
 | fileUrl | string(1024) | 存储路径 |
-| fileRole | enum | 文件角色：`source_video` / `source_images` / `compressed_model` |
+| fileRole | enum | 文件角色：`source_video` / `source_images` / `compressed_model` / `raw_model` |
 | mimeType | string(128) | MIME 类型（可选） |
 
 ### 3.3 状态机
@@ -214,7 +214,8 @@ initializing (0%)
 |------|------|---------|
 | `source_video` | 用户上传 | MinIO: `tasks/{taskId}/{fileName}`；本地缓存: `{local}/tasks/{taskId}/` |
 | `source_images` | 用户上传（N张） | MinIO: `tasks/{taskId}/{fileName}`；本地缓存: `{local}/tasks/{taskId}/` |
-| `compressed_model` | compress 阶段产出 | MinIO: `tasks/{taskId}/compressed/model.spz`；本地缓存: `{local}/tasks/{taskId}/compressed/` |
+| `compressed_model` | compress / finalize 阶段产出 | MinIO: `tasks/{taskId}/output/model.spz`；本地缓存: `{local}/tasks/{taskId}/output/` |
+| `raw_model` | finalize 阶段产出 | MinIO: `tasks/{taskId}/output/model.ply`；本地缓存: `{local}/tasks/{taskId}/output/` |
 
 中间产物（frames/colmap/models）仅存本地磁盘，不入库也不上传 MinIO。
 上传文件同时写入本地缓存和 MinIO，流水线使用本地缓存；下载时 MinIO 返回预签名 URL（302 重定向），本地模式回退 FileResponse。

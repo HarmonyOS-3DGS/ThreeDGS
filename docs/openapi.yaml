@@ -382,7 +382,7 @@ components:
           description: 文件路径
         fileRole:
           type: string
-          description: 文件角色：source_video / source_images / compressed_model
+          description: 文件角色：source_video / source_images / compressed_model / raw_model
           example: "source_video"
         mimeType:
           type: string

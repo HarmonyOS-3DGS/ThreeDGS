@@ -43,6 +43,7 @@ todo/
 .kimi/
 .claude/
 openspec/
+reference/
 claude.md
 
 # npm artifacts (used only once for 3D viewer deps)

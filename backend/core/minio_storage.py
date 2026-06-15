@@ -117,7 +117,6 @@ class MinioStorageClient:
             self.bucket, object_name, expires=timedelta(seconds=expires)
         )
 
-
     def delete_object(self, object_name: str) -> None:
         """从 MinIO 删除对象。"""
         self.client.remove_object(self.bucket, object_name)

@@ -45,19 +45,17 @@ class TestExternalAlgorithmTask:
             mock_docker.return_value.containers.run.return_value = mock_container
             with patch("backend.worker.tasks.external_algorithm._find_newest_ply") as mock_find:
                 mock_find.return_value = "/tmp/test.ply"
-                with patch("backend.worker.tasks.external_algorithm._add_output") as mock_add:
-                    mock_add.return_value = True
-                    with patch(
-                        "backend.worker.tasks.external_algorithm.TaskRepository.update_progress"
-                    ):
-                        from backend.worker.tasks.external_algorithm import run_external_algorithm
+                with patch(
+                    "backend.worker.tasks.external_algorithm.TaskRepository.update_progress"
+                ):
+                    from backend.worker.tasks.external_algorithm import run_external_algorithm
 
-                        result = run_external_algorithm.run("test-id", "/tmp/test.mp4")
-                        assert result["task_id"] == "test-id"
-                        assert "ply_path" in result
-                        mock_container.wait.assert_called_once()
-                        mock_container.remove.assert_called_once()
-                        mock_container.logs.assert_called_once_with(stream=True, follow=True)
+                    result = run_external_algorithm.run("test-id", "/tmp/test.mp4")
+                    assert result["task_id"] == "test-id"
+                    assert result["model_path"] == "/tmp/test.ply"
+                    mock_container.wait.assert_called_once()
+                    mock_container.remove.assert_called_once()
+                    mock_container.logs.assert_called_once_with(stream=True, follow=True)
 
     def test_docker_failure(self):
         with patch("backend.worker.tasks.external_algorithm.docker.from_env") as mock_docker:
@@ -91,23 +89,3 @@ class TestExternalAlgorithmTask:
                     mock_container.wait.assert_called_once()
                     mock_container.remove.assert_called_once()
                     mock_container.logs.assert_called_once_with(stream=True, follow=True)
-
-    def test_add_output_failure(self):
-        with patch("backend.worker.tasks.external_algorithm.docker.from_env") as mock_docker:
-            mock_container = MagicMock()
-            mock_container.wait.return_value = {"StatusCode": 0}
-            mock_container.logs.return_value = []
-            mock_docker.return_value.containers.run.return_value = mock_container
-            with patch("backend.worker.tasks.external_algorithm._find_newest_ply") as mock_find:
-                mock_find.return_value = "/tmp/test.ply"
-                with patch("backend.worker.tasks.external_algorithm._add_output") as mock_add:
-                    mock_add.return_value = False
-                    with patch(
-                        "backend.worker.tasks.external_algorithm.TaskRepository.update_progress"
-                    ):
-                        from backend.worker.tasks.external_algorithm import run_external_algorithm
-
-                        result = run_external_algorithm.run("test-id", "/tmp/test.mp4")
-                        assert "error" in result
-                        mock_container.wait.assert_called_once()
-                        mock_container.remove.assert_called_once()
