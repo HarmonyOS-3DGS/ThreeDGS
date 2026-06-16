@@ -3,6 +3,7 @@
 from celery import Celery
 
 from backend.core.config import settings
+from backend.core.logging import LOG_CONFIG
 
 app = Celery(
     "3dgs",
@@ -29,6 +30,7 @@ app.conf.update(
     task_time_limit=3600,
     worker_prefetch_multiplier=1,
     worker_hijack_root_logger=False,
+    worker_logconfig=LOG_CONFIG,
     beat_schedule={
         "cleanup-pending-tasks": {
             "task": "backend.worker.tasks.cleanup.cleanup_pending_tasks",

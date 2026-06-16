@@ -7,11 +7,6 @@ import sys
 import threading
 import time
 
-# 统一日志配置（在 Celery 加载前执行）
-from backend.core.logging import setup_logging
-
-setup_logging()
-
 logger = logging.getLogger(__name__)
 
 # 强制使用本地配置
@@ -80,6 +75,7 @@ logger.info("[3/3] Starting FastAPI...")
 import uvicorn  # noqa: E402
 
 from backend.api.main import app as fastapi_app  # noqa: E402
+from backend.core.logging import LOG_CONFIG  # noqa: E402
 
 api_server = None
 
@@ -92,6 +88,7 @@ def run_api():
         port=8000,
         log_level="info",
         reload=False,
+        log_config=LOG_CONFIG,
     )
     api_server = uvicorn.Server(config)
     api_server.run()

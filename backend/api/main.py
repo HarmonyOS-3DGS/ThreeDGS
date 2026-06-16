@@ -8,9 +8,6 @@ from fastapi.staticfiles import StaticFiles
 
 from backend.api.routers import sse, tasks
 from backend.core.database import init_db
-from backend.core.logging import setup_logging
-
-setup_logging()
 
 
 @asynccontextmanager

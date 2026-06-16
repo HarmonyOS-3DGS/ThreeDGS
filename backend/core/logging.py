@@ -1,6 +1,5 @@
-"""统一日志配置 — 控制台 + 滚动文件输出，确保 API 和 Worker 日志格式一致。"""
+"""统一日志配置 — 单个 dictConfig，通过框架原生 log_config 机制注入。"""
 
-import logging
 import os
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
@@ -8,8 +7,8 @@ from logging.handlers import RotatingFileHandler
 _LOG_FILE = os.getenv("LOG_FILE", "logs/3dgs.log")
 _LOG_DIR = os.path.dirname(_LOG_FILE)
 
-_FORMAT = "%(asctime)s [%(name)s] %(levelname)s: %(message)s"
-_DATE_FMT = "%Y-%m-%d %H:%M:%S"
+if _LOG_DIR:
+    os.makedirs(_LOG_DIR, exist_ok=True)
 
 
 class _TimestampedFileHandler(RotatingFileHandler):
@@ -24,29 +23,32 @@ class _TimestampedFileHandler(RotatingFileHandler):
         return f"{base}-{now}-{idx}{ext}"
 
 
-def setup_logging():
-    """配置根日志器：控制台输出 + 滚动文件输出。
-
-    幂等设计：根日志器已有 handler 时跳过，防止重复配置。
-    """
-    if logging.getLogger().hasHandlers():
-        return
-
-    handlers: list[logging.Handler] = [
-        logging.StreamHandler(),
-    ]
-
-    if _LOG_DIR:
-        os.makedirs(_LOG_DIR, exist_ok=True)
-        handlers.append(
-            _TimestampedFileHandler(
-                _LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=100, encoding="utf-8"
-            )
-        )
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format=_FORMAT,
-        datefmt=_DATE_FMT,
-        handlers=handlers,
-    )
+LOG_CONFIG = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "default": {
+            "format": "%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+            "datefmt": "%Y-%m-%d %H:%M:%S",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "default",
+            "stream": "ext://sys.stdout",
+        },
+        "file": {
+            "class": "backend.core.logging._TimestampedFileHandler",
+            "formatter": "default",
+            "filename": _LOG_FILE,
+            "maxBytes": 5 * 1024 * 1024,
+            "backupCount": 100,
+            "encoding": "utf-8",
+        },
+    },
+    "root": {
+        "handlers": ["console", "file"],
+        "level": "INFO",
+    },
+}
