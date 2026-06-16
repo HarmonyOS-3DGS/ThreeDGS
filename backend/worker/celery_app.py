@@ -28,6 +28,7 @@ app.conf.update(
     task_track_started=True,
     task_time_limit=3600,
     worker_prefetch_multiplier=1,
+    worker_hijack_root_logger=False,
     beat_schedule={
         "cleanup-pending-tasks": {
             "task": "backend.worker.tasks.cleanup.cleanup_pending_tasks",

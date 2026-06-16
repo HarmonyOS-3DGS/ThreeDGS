@@ -29,6 +29,7 @@ test.db
 *.db
 *.db-journal
 local_storage/
+logs/
 realtest_storage/
 integration_test_storage/
 uploads/

@@ -1,10 +1,18 @@
 #!/usr/bin/env python3
 """一键本地启动脚本（API + Worker 同进程线程模式，memory broker 共享）。"""
 
+import logging
 import os
 import sys
 import threading
 import time
+
+# 统一日志配置（在 Celery 加载前执行）
+from backend.core.logging import setup_logging
+
+setup_logging()
+
+logger = logging.getLogger(__name__)
 
 # 强制使用本地配置
 os.environ.setdefault("DATABASE_URL", "sqlite:///./3dgs.db")
@@ -19,14 +27,14 @@ os.makedirs("local_storage", exist_ok=True)
 os.makedirs("uploads", exist_ok=True)
 
 # 初始化数据库
-print("[1/3] 初始化数据库...")
+logger.info("[1/3] Initializing database...")
 from backend.core.database import init_db  # noqa: E402
 
 init_db()
-print("  数据库初始化完成")
+logger.info("  Database initialized")
 
 # 启动 Celery Worker 线程
-print("[2/3] 启动 Celery Worker...")
+logger.info("[2/3] Starting Celery Worker...")
 from backend.worker.celery_app import app as celery_app  # noqa: E402
 
 
@@ -39,6 +47,7 @@ def run_worker():
         concurrency=1,
         loglevel="info",
         broker_connection_retry_on_startup=True,
+        worker_hijack_root_logger=False,
     )
     worker.start()
 
@@ -53,7 +62,7 @@ def run_cleanup_scheduler():
             cleanup_pending_tasks.run()
             cleanup_completed_tasks.run()
         except Exception as e:
-            print(f"[cleanup] 清理失败: {e}")
+            logger.warning("[cleanup] cleanup failed: %s", e)
 
 
 worker_thread = threading.Thread(target=run_worker, daemon=True)
@@ -64,10 +73,10 @@ cleanup_thread = threading.Thread(target=run_cleanup_scheduler, daemon=True)
 cleanup_thread.start()
 
 time.sleep(2)
-print("  Worker 已启动")
+logger.info("  Worker started")
 
 # 启动 FastAPI 服务
-print("[3/3] 启动 FastAPI 服务...")
+logger.info("[3/3] Starting FastAPI...")
 import uvicorn  # noqa: E402
 
 from backend.api.main import app as fastapi_app  # noqa: E402
@@ -106,16 +115,16 @@ for _ in range(30):
     time.sleep(0.5)
 
 if not ready:
-    print("  API 启动失败")
+    logger.error("  API startup failed")
     sys.exit(1)
 
-print("========================================")
-print(" 服务已启动！访问地址：")
-print("  - 前端页面: http://localhost:8000/index.html")
-print("  - API 文档: http://localhost:8000/docs")
-print("  - 任务列表: http://localhost:8000/status.html")
-print("========================================")
-print("按 Ctrl+C 或 Enter 键停止服务")
+logger.info("========================================")
+logger.info(" Service started! Addresses:")
+logger.info("  - Frontend:  http://localhost:8000/index.html")
+logger.info("  - API docs:  http://localhost:8000/docs")
+logger.info("  - Task list: http://localhost:8000/status.html")
+logger.info("========================================")
+logger.info("Press Ctrl+C or Enter to stop")
 
 # 主线程保持运行，等待退出信号
 stop_event = threading.Event()
@@ -144,9 +153,9 @@ enter_thread.start()
 
 wait_for_exit()
 
-print("\n正在停止服务...")
+logger.info("Stopping service...")
 if api_server:
     api_server.should_exit = True
 api_thread.join(timeout=5)
-print("服务已停止")
+logger.info("Service stopped")
 sys.exit(0)

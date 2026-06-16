@@ -137,7 +137,7 @@ def run_external_algorithm(self, task_id: str, video_path: str):
     if not ply_path:
         logger.error("alg PLY not found task=%s dir=%s", task_id, local_output)
         TaskRepository.update_progress(
-            task_id, "training", 95, status="failed", error="未找到 PLY 文件"
+            task_id, "training", 95, status="failed", error="PLY file not found"
         )
         return {"task_id": task_id, "error": "PLY not found"}
 

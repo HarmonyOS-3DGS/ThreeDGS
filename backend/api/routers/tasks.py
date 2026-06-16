@@ -139,6 +139,12 @@ def create_task(
         upload_infos.append(url_info)
 
     db.commit()
+    logger.info(
+        "[create] task=%s fileInfos=%d uploadUrls=%d",
+        task.id,
+        len(request.fileInfos),
+        len(upload_infos),
+    )
     return CreateTaskRsp(taskId=task.id, uploadInfos=upload_infos)
 
 
@@ -157,7 +163,9 @@ async def upload_file(
 
     local_path = os.path.join(task_dir, safe_name)
     if os.path.isfile(local_path):
-        raise HTTPException(status_code=400, detail={"ret": {"code": 400, "msg": "文件已存在"}})
+        raise HTTPException(
+            status_code=400, detail={"ret": {"code": 400, "msg": "file already exists"}}
+        )
 
     content = await request.body()
     logger.info("upload: task=%s file=%s size=%d", task_id, safe_name, len(content))
@@ -175,12 +183,22 @@ async def upload_file(
             if role == "source_video" and not detected_mime.startswith("video/"):
                 raise HTTPException(
                     status_code=400,
-                    detail={"ret": {"code": 400, "msg": f"文件声明为视频，实际为 {detected_mime}"}},
+                    detail={
+                        "ret": {
+                            "code": 400,
+                            "msg": f"declared as video, actual mime: {detected_mime}",
+                        }
+                    },
                 )
             if role == "source_images" and not detected_mime.startswith("image/"):
                 raise HTTPException(
                     status_code=400,
-                    detail={"ret": {"code": 400, "msg": f"文件声明为图片，实际为 {detected_mime}"}},
+                    detail={
+                        "ret": {
+                            "code": 400,
+                            "msg": f"declared as image, actual mime: {detected_mime}",
+                        }
+                    },
                 )
 
     async with aiofiles.open(local_path, "wb") as f:
@@ -235,29 +253,31 @@ def start_task(
             logger.info("start: downloading from storage %s -> %s", remote_path, local_video)
             try:
                 storage.download_file(remote_path, local_video)
+                logger.info("start: download complete %s", task_id)
             except Exception:
                 logger.warning("start: download failed %s", remote_path)
         if not os.path.exists(local_video):
             logger.error("start: file not found %s", local_video)
             task.status = TaskStatus.FAILED.value
-            task.error_message = "文件尚未上传"
+            task.error_message = "file not uploaded yet"
             db.commit()
             raise HTTPException(
                 status_code=400,
                 detail={
                     "ret": {
                         "code": 400,
-                        "msg": "文件尚未上传，请先通过 uploadInfos 中的 URL 上传文件",
+                        "msg": "file not uploaded yet, please upload via uploadInfos URL first",
                     }
                 },
             )
         submit_pipeline(task_id, local_video)
+        logger.info("[start] task=%s pipeline submitted", task_id)
     else:
         task.status = TaskStatus.FAILED.value
-        task.error_message = "没有找到可处理的视频文件"
+        task.error_message = "no valid video file found"
         db.commit()
         raise HTTPException(
-            status_code=400, detail={"ret": {"code": 400, "msg": "没有找到可处理的视频文件"}}
+            status_code=400, detail={"ret": {"code": 400, "msg": "no valid video file found"}}
         )
 
     return StartTaskRsp(remainingTime=task.remaining_time)

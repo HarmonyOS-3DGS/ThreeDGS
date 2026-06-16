@@ -17,7 +17,7 @@ def compress_model(
 ) -> dict[str, str]:
     """将模型压缩为指定格式，返回 {format: output_path}。"""
     if not os.path.isfile(model_path):
-        raise FileNotFoundError(f"模型文件不存在: {model_path}")
+        raise FileNotFoundError(f"model file not found: {model_path}")
 
     results: dict[str, str] = {}
     for fmt in formats:

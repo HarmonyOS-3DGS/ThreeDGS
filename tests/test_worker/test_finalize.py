@@ -62,7 +62,7 @@ class TestFinalizeOutputs:
         with patch("backend.worker.tasks.finalize.TaskRepository"):
             from backend.worker.tasks.finalize import finalize_outputs
 
-            with pytest.raises(ValueError, match="缺少 model_path"):
+            with pytest.raises(ValueError, match="missing model_path"):
                 finalize_outputs.run({"task_id": "test-id"})
 
     def test_no_output_types_skips_everything(self):

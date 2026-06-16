@@ -30,7 +30,7 @@ def finalize_outputs(self, prev_result: dict):
     task_id = prev_result["task_id"]
     ply_path = prev_result.get("model_path")
     if not ply_path:
-        raise ValueError("prev_result 缺少 model_path")
+        raise ValueError("prev_result missing model_path")
 
     output_dir = task_output_path(task_id, "output")
     os.makedirs(output_dir, exist_ok=True)

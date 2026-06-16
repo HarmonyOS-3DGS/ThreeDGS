@@ -26,6 +26,7 @@ services:
       - ALG_EXPECTED_SECONDS=960
       - ALG_MAX_SECONDS=3600
       - OUTPUT_TYPES=${OUTPUT_TYPES:-raw_model}
+      - LOG_FILE=/app/logs/3dgs.log
     depends_on:
       db:
         condition: service_healthy
@@ -35,6 +36,7 @@ services:
         condition: service_healthy
     volumes:
       - /data/3dgs/tasks:/app/local_storage/tasks
+      - /data/3dgs/logs:/app/logs
 
   worker:
     build:
@@ -65,6 +67,7 @@ services:
       - ALG_EXPECTED_SECONDS=960
       - ALG_MAX_SECONDS=3600
       - OUTPUT_TYPES=${OUTPUT_TYPES:-raw_model}
+      - LOG_FILE=/app/logs/3dgs.log
     depends_on:
       db:
         condition: service_healthy
@@ -74,6 +77,7 @@ services:
         condition: service_healthy
     volumes:
       - /data/3dgs/tasks:/app/local_storage/tasks
+      - /data/3dgs/logs:/app/logs
       - /var/run/docker.sock:/var/run/docker.sock
 
   redis:
@@ -121,5 +125,3 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
-
-

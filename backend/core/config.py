@@ -80,7 +80,7 @@ class Settings(BaseSettings):
     def _validate_output_types(cls, v):
         for t in v:
             if t not in VALID_OUTPUT_TYPES:
-                raise ValueError(f"无效输出类型 '{t}'，支持: {VALID_OUTPUT_TYPES}")
+                raise ValueError(f"invalid output type '{t}', valid: {VALID_OUTPUT_TYPES}")
         return v
 
 

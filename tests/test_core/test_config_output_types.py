@@ -23,5 +23,5 @@ class TestOutputTypes:
     def test_invalid_value_raises_error(self):
         import pytest
 
-        with pytest.raises(ValueError, match="无效输出类型"):
+        with pytest.raises(ValueError, match="invalid output type"):
             Settings(_env_file=None, output_types="invalid")

@@ -30,10 +30,14 @@ class LocalStorageClient:
         return file_path
 
     def get_presigned_url(self, object_name: str, expires: int = 3600) -> str:
-        raise NotImplementedError("本地存储不支持预签名 URL，请使用 FileResponse 直接读取文件")
+        raise NotImplementedError(
+            "Local storage does not support presigned URLs, use FileResponse instead"
+        )
 
     def get_presigned_put_url(self, object_name: str, expires: int = 3600) -> str:
-        raise NotImplementedError("本地存储不支持预签名 URL，请使用本地上传端点")
+        raise NotImplementedError(
+            "Local storage does not support presigned URLs, use local upload endpoint"
+        )
 
     def delete_object(self, object_name: str) -> None:
         path = self._resolve(object_name)

@@ -92,8 +92,10 @@ class MinioStorageClient:
             urlopen(req)
             logger.info("MinIO CORS configured: ALLOW * GET/PUT/POST/DELETE/HEAD")
         except Exception as e:
-            logger.warning("MinIO CORS 配置失败: %s", e)
-            logger.warning("请手动配置: mc admin config set local api cors_allow_origin='*'")
+            logger.warning("Failed to configure MinIO CORS: %s", e)
+            logger.warning(
+                "Please configure manually: mc admin config set local api cors_allow_origin='*'"
+            )
 
     def upload_file(self, object_name: str, file_path: str) -> str:
         """上传本地文件到 MinIO，返回对象路径。"""
