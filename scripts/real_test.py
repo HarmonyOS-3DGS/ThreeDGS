@@ -1,5 +1,6 @@
 """Real HTTP integration test - API + Worker in same process."""
 
+import base64
 import os
 import sys
 import threading
@@ -12,14 +13,16 @@ os.environ["CELERY_BROKER_URL"] = "memory://"
 os.environ["CELERY_RESULT_BACKEND"] = "cache+memory://"
 os.environ["USE_LOCAL_STORAGE"] = "true"
 os.environ["LOCAL_STORAGE_DIR"] = "./realtest_storage"
-os.environ["API_KEY"] = "test-key-123"
+os.environ["SERVICE_ACCOUNTS"] = "test-client:test-secret"
+os.environ["JWT_SECRET_KEY"] = "test-jwt-secret-for-integration-test"
 
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
 PORT = 18002
 URL = f"http://127.0.0.1:{PORT}"
-KEY = "test-key-123"
+CLIENT_ID = "test-client"
+CLIENT_SECRET = "test-secret"
 
 
 def cleanup():
@@ -107,6 +110,20 @@ if not ready:
     sys.exit(1)
 print("API ready on", URL)
 
+# Get JWT token
+r = httpx.post(
+    f"{URL}/auth/token",
+    headers={
+        "Authorization": f"Basic {base64.b64encode(f'{CLIENT_ID}:{CLIENT_SECRET}'.encode()).decode()}"
+    },
+    timeout=5,
+)
+if r.status_code != 200:
+    print(f"Token exchange failed: {r.status_code} {r.text}")
+    sys.exit(1)
+TOKEN = r.json()["access_token"]
+print("Token acquired")
+
 # Tests
 passed = 0
 failed = 0
@@ -133,7 +150,7 @@ body = {
 r = httpx.post(
     f"{URL}/tasks",
     json=body,
-    headers={"Authorization": KEY, "projectId": "proj-test"},
+    headers={"Authorization": f"Bearer {TOKEN}", "projectId": "proj-test"},
     timeout=10,
 )
 check("Create task", r.status_code == 200, f"status={r.status_code}")
@@ -163,7 +180,7 @@ check("Upload file", r.status_code in (200, 204), f"status={r.status_code}")
 # Test 2: Start task
 r = httpx.post(
     f"{URL}/tasks/{task_id}/start",
-    headers={"Authorization": KEY, "projectId": "proj-test"},
+    headers={"Authorization": f"Bearer {TOKEN}", "projectId": "proj-test"},
     timeout=5,
 )
 check(
@@ -173,7 +190,7 @@ check(
 # Test 3: Query task
 r = httpx.get(
     f"{URL}/tasks/{task_id}",
-    headers={"Authorization": KEY, "projectId": "proj-test"},
+    headers={"Authorization": f"Bearer {TOKEN}", "projectId": "proj-test"},
     timeout=5,
 )
 check(
@@ -188,7 +205,7 @@ status = ""
 for i in range(40):
     r = httpx.get(
         f"{URL}/tasks/{task_id}",
-        headers={"Authorization": KEY, "projectId": "proj-test"},
+        headers={"Authorization": f"Bearer {TOKEN}", "projectId": "proj-test"},
         timeout=5,
     )
     data = r.json()
@@ -205,7 +222,7 @@ check("Pipeline completes", status == "completed", f"final={status}")
 # Test 5: Final state
 r = httpx.get(
     f"{URL}/tasks/{task_id}",
-    headers={"Authorization": KEY, "projectId": "proj-test"},
+    headers={"Authorization": f"Bearer {TOKEN}", "projectId": "proj-test"},
     timeout=5,
 )
 data = r.json()

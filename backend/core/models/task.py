@@ -33,6 +33,7 @@ class Task(Base):
     id = Column(String(32), primary_key=True, default=_generate_task_id)
     project_id = Column(String(20), nullable=False, index=True)
     external_code = Column(String(256), nullable=False, index=True)
+    client_id = Column(String(64), nullable=False, default="", index=True)
     scene = Column(String(32), nullable=False)
     status = Column(String(50), default=TaskStatus.PENDING.value)
     current_stage = Column(String(50), default=TaskStage.INITIALIZING.value)

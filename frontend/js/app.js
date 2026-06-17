@@ -1,9 +1,63 @@
 /* 3DGS Platform frontend */
 const API = APP_CONFIG.API_BASE;
-const AUTH_TOKEN = APP_CONFIG.AUTH_TOKEN;
+let ACCESS_TOKEN = sessionStorage.getItem("access_token");
+
+function showLoginForm() {
+    document.getElementById("auth-client-id").style.display = "";
+    document.getElementById("auth-client-secret").style.display = "";
+    document.querySelector("#auth-bar button").style.display = "";
+    ACCESS_TOKEN = null;
+    sessionStorage.removeItem("access_token");
+    sessionStorage.removeItem("client_id");
+}
+
+const origFetch = window.fetch;
+window.fetch = function(url, opts) {
+    return origFetch(url, opts).then(r => {
+        if (r.status === 401 && ACCESS_TOKEN) {
+            showLoginForm();
+            document.getElementById("auth-status").textContent = "登录已过期，请重新登录";
+        }
+        return r;
+    });
+};
+
+if (ACCESS_TOKEN) {
+    const cid = sessionStorage.getItem("client_id") || "";
+    document.getElementById("auth-client-id").style.display = "none";
+    document.getElementById("auth-client-secret").style.display = "none";
+    document.querySelector("#auth-bar button").style.display = "none";
+    document.getElementById("auth-status").textContent = cid ? `已登录: ${cid}` : "已登录";
+}
+
+async function login() {
+    const cid = document.getElementById("auth-client-id")?.value;
+    const secret = document.getElementById("auth-client-secret")?.value;
+    if (!cid || !secret) return;
+    const basic = btoa(`${cid}:${secret}`);
+    const res = await fetch(`${API.replace("/tasks", "")}/auth/token`, {
+        method: "POST",
+        headers: { "Authorization": `Basic ${basic}` },
+    });
+    if (!res.ok) {
+        const el = document.getElementById("auth-status");
+        if (el) el.textContent = "登录失败";
+        return;
+    }
+    const data = await res.json();
+    ACCESS_TOKEN = data.access_token;
+    sessionStorage.setItem("access_token", ACCESS_TOKEN);
+    sessionStorage.setItem("client_id", cid);
+    document.getElementById("auth-client-id").style.display = "none";
+    document.getElementById("auth-client-secret").style.display = "none";
+    document.querySelector("#auth-bar button").style.display = "none";
+    const el = document.getElementById("auth-status");
+    if (el) el.textContent = `已登录: ${cid}`;
+    setTimeout(login, Math.max(60000, (data.expires_in - 300)) * 1000);
+}
 
 function apiHeaders(projectId) {
-    return { "Authorization": AUTH_TOKEN, "projectId": projectId };
+    return { "Authorization": `Bearer ${ACCESS_TOKEN}`, "projectId": projectId };
 }
 
 // ====== Upload page ======
@@ -70,7 +124,7 @@ if (uploadForm) {
             // Step 1: 创建任务，获取上传 URL
             const res1 = await fetch(API, {
                 method: "POST",
-                headers: { "Authorization": AUTH_TOKEN, "projectId": projectId, "Content-Type": "application/json" },
+                headers: { ...apiHeaders(projectId), "Content-Type": "application/json" },
                 body: JSON.stringify({ externalCode, scene, fileInfos }),
             });
             const data = await res1.json();

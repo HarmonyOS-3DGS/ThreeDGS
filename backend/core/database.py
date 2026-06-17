@@ -41,6 +41,22 @@ def get_db():
         db.close()
 
 
+def _ensure_client_id_column():
+    """迁移：为已有 tasks 表添加 client_id 列。"""
+    from sqlalchemy import text
+    from sqlalchemy.exc import OperationalError
+
+    try:
+        with engine.connect() as conn:
+            conn.execute(
+                text("ALTER TABLE tasks ADD COLUMN client_id VARCHAR(64) NOT NULL DEFAULT ''")
+            )
+            conn.commit()
+    except OperationalError:
+        pass
+
+
 def init_db():
     """自动建表（MVP 阶段无 Alembic 迁移）。"""
     Base.metadata.create_all(bind=engine)
+    _ensure_client_id_column()

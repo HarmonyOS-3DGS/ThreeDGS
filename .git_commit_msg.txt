@@ -1,0 +1,12 @@
+feat: JWT ServiceAccount 鉴权 — client_id 隔离 + 登录表单 + 归属校验
+
+- auth.py: JWT 验签 (HS256)，get_current_client_id 返回 (client_id, token)
+- config.py: api_key → SERVICE_ACCOUNTS + JWT_SECRET_KEY + ADMIN_CLIENT_ID
+- 新增 POST /auth/token 端点 (Basic Auth 换 JWT)
+- Task ORM + repository: client_id 字段，按 client_id 过滤
+- 所有端点: JWT 注入 + _check_ownership 归属校验
+- SSE/download_file: 双通道鉴权 (Header + Query)
+- 前端: 登录表单 + sessionStorage 持久化 + 401 自动弹窗
+- generate_keys.py: 密钥生成脚本
+- tests: 新增 auth 测试 (104 cases)
+- docs: system_design/openapi/README/AGENTS 同步更新

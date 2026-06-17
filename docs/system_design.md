@@ -139,10 +139,13 @@ initializing (0%)
 
 ### 4.1 鉴权
 
-- 所有接口需要 `Authorization` Header
-- 两种策略：`app_auth`（创建任务）、`project_auth`（其他接口）
-- 配置项 `apiKey` 为空时关闭鉴权
-- SSE / 下载端点额外支持 Query 参数传递鉴权（浏览器限制）
+- 标准 OAuth2 Client Credentials 流程
+- 合作方持 `client_id` + `secret`，通过 `POST /auth/token`（Basic Auth）换取 JWT
+- 后续请求使用 `Authorization: Bearer <JWT>` Header
+- 配置项 `SERVICE_ACCOUNTS` 为空时关闭鉴权（`SERVICE_ACCOUNTS=partner-a:sk-xxx,partner-b:sk-yyy`）
+- `JWT_SECRET_KEY` 为 JWT 签名密钥，启用鉴权时必须配置
+- `ADMIN_CLIENT_ID` 为空时无管理员豁免；设定后该 clientId 可跨账户查看任务
+- SSE / 下载端点额外支持 Query 参数传递 Bearer JWT（浏览器限制）
 
 ### 4.2 公共参数
 
@@ -163,13 +166,14 @@ initializing (0%)
 
 | 方法 | 路径 | 鉴权 | 说明 |
 |------|------|------|------|
-| POST | /tasks | app_auth | 创建任务（JSON body），返回预签名上传 URL |
-| GET | /tasks | project_auth | 按 projectId 列出任务 |
-| POST | /tasks/{taskId}/start | project_auth | 检查文件 → 启动流水线 |
-| GET | /tasks/{taskId} | project_auth | 查询状态和输出文件下载 URL |
-| GET | /tasks/{taskId}/download/{filename} | project_auth | 下载输出文件（支持 Query 鉴权） |
-| PUT | /tasks/{taskId}/upload/{filename} | app_auth | 本地上传文件（Docker 模式通过 MinIO 预签名 URL 直接上传） |
-| GET | /tasks/{taskId}/events | project_auth | SSE 实时进度（支持 Query 鉴权） |
+| POST | /auth/token | Basic Auth | 用 `client_id:secret` 换取 JWT access_token |
+| POST | /tasks | Bearer JWT | 创建任务（JSON body），返回预签名上传 URL |
+| GET | /tasks | Bearer JWT | 按 projectId 列出任务（按 client_id 隔离） |
+| POST | /tasks/{taskId}/start | Bearer JWT | 检查文件 → 启动流水线（校验归属） |
+| GET | /tasks/{taskId} | Bearer JWT | 查询状态和输出文件下载 URL（校验归属） |
+| GET | /tasks/{taskId}/download/{filename} | Bearer JWT | 下载输出文件（支持 Query 传 JWT） |
+| PUT | /tasks/{taskId}/upload/{filename} | Bearer JWT | 本地上传文件（Docker 模式通过 MinIO 预签名 URL 直接上传） |
+| GET | /tasks/{taskId}/events | Bearer JWT | SSE 实时进度（支持 Query 传 JWT） |
 
 ### 4.5 CreateTaskReq / CreateTaskRsp
 

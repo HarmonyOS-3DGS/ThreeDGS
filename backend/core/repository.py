@@ -35,25 +35,28 @@ class TaskRepository:
 
     # ── API 层（注入 Session）─────────────────────────────
 
-    def get(self, task_id: str, project_id: str | None = None) -> Task | None:
+    def get(
+        self, task_id: str, project_id: str | None = None, client_id: str | None = None
+    ) -> Task | None:
         q = self.db.query(Task).filter(Task.id == task_id)
         if project_id:
             q = q.filter(Task.project_id == project_id)
+        if client_id:
+            q = q.filter(Task.client_id == client_id)
         return q.first()
 
-    def list_by_project(self, project_id: str) -> list[Task]:
-        return (
-            self.db.query(Task)
-            .filter(Task.project_id == project_id)
-            .order_by(Task.created_at.desc())
-            .all()
-        )
+    def list_by_project(self, project_id: str, client_id: str | None = None) -> list[Task]:
+        q = self.db.query(Task).filter(Task.project_id == project_id)
+        if client_id:
+            q = q.filter(Task.client_id == client_id)
+        return q.order_by(Task.created_at.desc()).all()
 
-    def create(self, project_id: str, external_code: str, scene: str) -> Task:
+    def create(self, project_id: str, external_code: str, scene: str, client_id: str = "") -> Task:
         task = Task(
             project_id=project_id,
             external_code=external_code,
             scene=scene,
+            client_id=client_id,
             status=TaskStatus.PENDING.value,
         )
         self.db.add(task)

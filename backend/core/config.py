@@ -38,8 +38,11 @@ class Settings(BaseSettings):
     celery_broker_url: str = Field(default="memory://")
     celery_result_backend: str = Field(default="cache+memory://")
 
-    # Auth
-    api_key: str = Field(default="")
+    # Auth — ServiceAccount 凭证对（逗号分隔 client_id:secret）
+    service_accounts_raw: str = Field(default="", alias="SERVICE_ACCOUNTS")
+    jwt_secret_key: str = Field(default="")
+    jwt_expire_seconds: int = Field(default=3600)
+    admin_client_id: str = Field(default="")
 
     # Task lifecycle
     task_pending_ttl_hours: int = Field(default=24)
@@ -66,6 +69,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+        extra = "ignore"
 
     @field_validator("output_types", mode="before")
     @classmethod
@@ -82,6 +86,24 @@ class Settings(BaseSettings):
             if t not in VALID_OUTPUT_TYPES:
                 raise ValueError(f"invalid output type '{t}', valid: {VALID_OUTPUT_TYPES}")
         return v
+
+    @property
+    def service_accounts(self) -> dict[str, str]:
+        """将 SERVICE_ACCOUNTS 字符串解析为 {client_id: secret} 字典。"""
+        return parse_service_accounts(self.service_accounts_raw)
+
+
+def parse_service_accounts(raw: str) -> dict[str, str]:
+    """解析 SERVICE_ACCOUNTS 字符串为 {client_id: secret} 字典。"""
+    if not raw:
+        return {}
+    pairs = [x.strip() for x in raw.split(",") if x.strip()]
+    result = {}
+    for p in pairs:
+        if ":" in p:
+            cid, secret = p.split(":", 1)
+            result[cid.strip()] = secret.strip()
+    return result
 
 
 settings = Settings()

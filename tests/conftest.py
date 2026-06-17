@@ -14,7 +14,10 @@ os.environ.setdefault("MINIO_SECRET_KEY", "minioadmin")
 os.environ.setdefault("MINIO_BUCKET", "gaussian")
 os.environ.setdefault("MINIO_SECURE", "false")
 os.environ.setdefault("USE_LOCAL_STORAGE", "true")
-os.environ.setdefault("API_KEY", "test-key")
+os.environ.setdefault("SERVICE_ACCOUNTS", "test-client:test-secret")
+os.environ.setdefault("JWT_SECRET_KEY", "test-jwt-secret")
+
+from datetime import UTC
 
 import pytest
 from fastapi.testclient import TestClient
@@ -66,7 +69,14 @@ def setup_db():
 
 @pytest.fixture
 def client():
-    return TestClient(app, headers={"Authorization": "test-key"})
+    """返回已携带有效 JWT 的测试客户端。"""
+    from datetime import datetime, timedelta
+
+    import jwt
+
+    payload = {"client_id": "test-client", "exp": datetime.now(UTC) + timedelta(hours=1)}
+    token = jwt.encode(payload, "test-jwt-secret", algorithm="HS256")
+    return TestClient(app, headers={"Authorization": f"Bearer {token}"})
 
 
 @pytest.fixture

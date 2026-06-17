@@ -15,7 +15,8 @@ os.environ.setdefault("CELERY_BROKER_URL", "memory://")
 os.environ.setdefault("CELERY_RESULT_BACKEND", "cache+memory://")
 os.environ.setdefault("USE_LOCAL_STORAGE", "true")
 os.environ.setdefault("LOCAL_STORAGE_DIR", "./local_storage")
-os.environ.setdefault("API_KEY", "")
+os.environ.setdefault("SERVICE_ACCOUNTS", "dev-admin:sk-debug")
+os.environ.setdefault("JWT_SECRET_KEY", "dev-jwt-secret-not-for-production")
 
 # 创建本地存储目录
 os.makedirs("local_storage", exist_ok=True)

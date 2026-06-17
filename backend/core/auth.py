@@ -1,35 +1,50 @@
-"""Authorization header authentication."""
+"""JWT-based authentication — ServiceAccount pattern (OAuth2 Client Credentials)."""
 
+import logging
+
+import jwt
 from fastapi import HTTPException, Security, status
-from fastapi.security import APIKeyHeader
+from fastapi.security import HTTPBearer
 
 from backend.core.config import settings
 
-AUTH_HEADER = APIKeyHeader(name="Authorization", auto_error=False)
+logger = logging.getLogger(__name__)
+
+BEARER_SCHEME = HTTPBearer(auto_error=False)
 
 
-def _verify_auth_key(auth_header: str | None) -> str:
-    expected = getattr(settings, "api_key", None)
-    if not expected:
-        return auth_header or ""
-    if not auth_header:
+def _auth_enabled() -> bool:
+    return bool(settings.service_accounts_raw)
+
+
+def _decode_jwt(token: str) -> dict:
+    key = settings.jwt_secret_key
+    if not key:
+        raise HTTPException(
+            status_code=500,
+            detail="JWT_SECRET_KEY not configured",
+        )
+    try:
+        payload = jwt.decode(token, key, algorithms=["HS256"])
+        return payload
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="invalid token")
+
+
+def get_current_client_id(token_data: dict = Security(BEARER_SCHEME)) -> tuple[str, str]:
+    """返回 (client_id, raw_token)。raw_token 用于回退 URL 等场景。"""
+    if not _auth_enabled():
+        return "", ""
+    if not token_data:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"ret": {"code": 401, "msg": "Missing Authorization header"}},
+            detail="Missing Authorization header",
         )
-    if auth_header != expected:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"ret": {"code": 401, "msg": "Invalid Authorization"}},
-        )
-    return auth_header
+    payload = _decode_jwt(token_data.credentials)
+    return payload.get("client_id", ""), token_data.credentials
 
 
-def verify_app_auth(auth_header: str = Security(AUTH_HEADER)) -> str:
-    """应用级鉴权 - 用于创建任务."""
-    return _verify_auth_key(auth_header)
-
-
-def verify_project_auth(auth_header: str = Security(AUTH_HEADER)) -> str:
-    """项目级鉴权 - 用于启动、查询、SSE."""
-    return _verify_auth_key(auth_header)
+def get_admin_client_id() -> str:
+    return settings.admin_client_id

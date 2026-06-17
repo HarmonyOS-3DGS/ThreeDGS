@@ -4,6 +4,5 @@
  */
 const APP_CONFIG = window.APP_CONFIG || {
     API_BASE: "/tasks",
-    AUTH_TOKEN: "3dgs-dev-2026",
     DEFAULT_PROJECT_ID: "default",
 };

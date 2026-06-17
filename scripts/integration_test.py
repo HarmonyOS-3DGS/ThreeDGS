@@ -14,13 +14,15 @@ from pathlib import Path
 # Ensure project root on path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import base64
+
 import httpx
 
 API_PORT = 18000
 BASE_URL = f"http://localhost:{API_PORT}"
-API_KEY = "3dgs-dev-2026"
+CLIENT_ID = "test-client"
+CLIENT_SECRET = "test-secret"
 PROJECT_ID = "integration-test"
-HEADERS = {"Authorization": API_KEY, "projectId": PROJECT_ID}
 
 # Set local env for integration test
 os.environ["DATABASE_URL"] = "sqlite:///./integration_test.db"
@@ -28,7 +30,8 @@ os.environ["CELERY_BROKER_URL"] = "memory://"
 os.environ["CELERY_RESULT_BACKEND"] = "cache+memory://"
 os.environ["USE_LOCAL_STORAGE"] = "true"
 os.environ["LOCAL_STORAGE_DIR"] = "./integration_test_storage"
-os.environ["API_KEY"] = API_KEY
+os.environ["SERVICE_ACCOUNTS"] = f"{CLIENT_ID}:{CLIENT_SECRET}"
+os.environ["JWT_SECRET_KEY"] = "test-jwt-secret-for-integration-test"
 
 
 def wait_for_service(url: str, timeout: int = 30) -> bool:
@@ -109,6 +112,22 @@ def run_test():
         return False
     print("   [PASS] API ready")
 
+    # Get JWT token
+    try:
+        basic = base64.b64encode(f"{CLIENT_ID}:{CLIENT_SECRET}".encode()).decode()
+        r = httpx.post(
+            f"{BASE_URL}/auth/token", headers={"Authorization": f"Basic {basic}"}, timeout=5
+        )
+        if r.status_code != 200:
+            print(f"[FAIL] Token exchange failed: {r.status_code}")
+            return False
+        TOKEN = r.json()["access_token"]
+        print("   [PASS] Token acquired")
+    except Exception as e:
+        print(f"[FAIL] Token exchange error: {e}")
+        return False
+
+    HEADERS = {"Authorization": f"Bearer {TOKEN}", "projectId": PROJECT_ID}
     passed = 0
     failed = 0
 
@@ -186,7 +205,7 @@ def run_test():
     print_step("Test 5: SSE events endpoint")
     try:
         sse_url = (
-            f"{BASE_URL}/tasks/{task_id}/events?projectId={PROJECT_ID}&Authorization={API_KEY}"
+            f"{BASE_URL}/tasks/{task_id}/events?projectId={PROJECT_ID}&Authorization=Bearer {TOKEN}"
         )
         with httpx.stream("GET", sse_url, timeout=3) as stream:
             chunk = ""

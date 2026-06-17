@@ -16,7 +16,7 @@ import json
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sse_starlette.sse import EventSourceResponse
 
-from backend.core.auth import _verify_auth_key
+from backend.core.auth import _auth_enabled, _decode_jwt, get_admin_client_id
 from backend.core.database import SessionLocal, Task
 
 router = APIRouter(prefix="/tasks", tags=["sse"])
@@ -28,24 +28,30 @@ def _verify_sse_auth(
     auth_h: str | None = Header(None, alias="Authorization"),
     auth_q: str | None = Query(None, alias="Authorization"),
 ):
-    token = auth_h or auth_q
-    _verify_auth_key(token)
+    token_str = auth_h or auth_q or ""
+    token_str = token_str.replace("Bearer ", "")
+    client_id = ""
+    if token_str and _auth_enabled():
+        payload = _decode_jwt(token_str)
+        client_id = payload.get("client_id", "")
+    elif _auth_enabled():
+        raise HTTPException(status_code=401, detail="Missing Authorization header")
     pid = projectId_h or projectId_q
     if not pid:
         raise HTTPException(
             status_code=422, detail={"ret": {"code": 422, "msg": "Missing projectId"}}
         )
-    return pid
+    return pid, client_id
 
 
-def _fetch_task_status(task_id: str, project_id: str) -> dict | None:
-    """同步查询 + 返回纯 dict。
-
-    返回 dict 而非 ORM 对象：调用方在另一个线程，ORM 对象跨 session 不可用。
-    """
+def _fetch_task_status(task_id: str, project_id: str, client_id: str = "") -> dict | None:
     db = SessionLocal()
     try:
-        task = db.query(Task).filter(Task.id == task_id, Task.project_id == project_id).first()
+        q = db.query(Task).filter(Task.id == task_id, Task.project_id == project_id)
+        admin_id = get_admin_client_id()
+        if client_id and client_id != admin_id:
+            q = q.filter(Task.client_id == client_id)
+        task = q.first()
         if not task:
             return None
         return {
@@ -59,9 +65,9 @@ def _fetch_task_status(task_id: str, project_id: str) -> dict | None:
         db.close()
 
 
-async def task_event_generator(task_id: str, project_id: str):
+async def task_event_generator(task_id: str, project_id: str, client_id: str = ""):
     while True:
-        data = await asyncio.to_thread(_fetch_task_status, task_id, project_id)
+        data = await asyncio.to_thread(_fetch_task_status, task_id, project_id, client_id)
 
         if data is None:
             yield {
@@ -82,11 +88,11 @@ async def task_event_generator(task_id: str, project_id: str):
 @router.get("/{task_id}/events")
 async def task_events(
     task_id: str,
-    pid: str = Depends(_verify_sse_auth),
+    pid_cid: tuple = Depends(_verify_sse_auth),
 ):
-    # 快速预检任务是否存在
-    data = await asyncio.to_thread(_fetch_task_status, task_id, pid)
+    pid, client_id = pid_cid
+    data = await asyncio.to_thread(_fetch_task_status, task_id, pid, client_id)
     if data is None:
         raise HTTPException(status_code=404, detail={"ret": {"code": 404, "msg": "Task not found"}})
 
-    return EventSourceResponse(task_event_generator(task_id, pid))
+    return EventSourceResponse(task_event_generator(task_id, pid, client_id))

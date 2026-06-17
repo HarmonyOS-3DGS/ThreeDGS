@@ -21,7 +21,9 @@ services:
       - MINIO_PUBLIC_ENDPOINT=你的服务器IP:9000
       - USE_LOCAL_STORAGE=false
       - LOCAL_STORAGE_DIR=/app/local_storage
-      - API_KEY=${API_KEY:-}
+      - SERVICE_ACCOUNTS=${SERVICE_ACCOUNTS:-}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-}
+      - ADMIN_CLIENT_ID=${ADMIN_CLIENT_ID:-}
       - ALG_ENABLED=false
       - ALG_EXPECTED_SECONDS=960
       - ALG_MAX_SECONDS=3600
@@ -56,7 +58,9 @@ services:
       - MINIO_PUBLIC_ENDPOINT=你的服务器IP:9000
       - USE_LOCAL_STORAGE=false
       - LOCAL_STORAGE_DIR=/app/local_storage
-      - API_KEY=${API_KEY:-}
+      - SERVICE_ACCOUNTS=${SERVICE_ACCOUNTS:-}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-}
+      - ADMIN_CLIENT_ID=${ADMIN_CLIENT_ID:-}
       - ALG_ENABLED=false
       - ALG_IMAGE=alg_pipeline
       - ALG_SCRIPT=alg_pipeline.pyc

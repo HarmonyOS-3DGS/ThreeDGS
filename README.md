@@ -124,41 +124,50 @@ python run_local.py
 
 ## API 端点
 
-所有接口需要 `Authorization` Header（默认: `3dgs-dev-2026`）。还需 `projectId` Header。
+所有接口需要 `Authorization: Bearer <JWT>` Header。还需 `projectId` Header。
+JWT 通过 `POST /auth/token` 用 `client_id:secret`（Basic Auth）换取。
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/tasks` | 创建任务（JSON body: `externalCode` + `fileInfos` + `scene`），返回预签名上传 URL |
+| POST | `/auth/token` | 用 Basic Auth 换取 JWT access_token |
+| POST | `/tasks` | 创建任务（JSON body），返回预签名上传 URL |
 | PUT | `/tasks/{id}/upload/{filename}` | 本地上传文件 |
 | POST | `/tasks/{id}/start` | 启动任务流水线 |
 | GET | `/tasks/{id}` | 查询任务状态及输出文件下载链接 |
-| GET | `/tasks/{id}/download/{filename}` | 下载输出文件 |
-| GET | `/tasks/{id}/events` | SSE 实时进度推送（鉴权通过 Query 参数） |
+| GET | `/tasks/{id}/download/{filename}` | 下载输出文件（支持 Query 传 JWT） |
+| GET | `/tasks/{id}/events` | SSE 实时进度推送（支持 Query 传 JWT） |
 
 ### 鉴权
 
-通过 `.env` 中的 `API_KEY` 配置：
-- 留空 → 关闭鉴权（开放访问）
-- 设置值 → 所有请求需带 `Authorization: <key>`
+通过 `.env` 中的 `SERVICE_ACCOUNTS` 和 `JWT_SECRET_KEY` 配置：
+- `SERVICE_ACCOUNTS` 为空 → 关闭鉴权（开放访问）
+- `SERVICE_ACCOUNTS=partner-a:sk-xxx,partner-b:sk-yyy` → 启用 JWT 鉴权
+- `JWT_SECRET_KEY` 为 JWT 签名密钥，启用鉴权时必须配置强随机串
 
 ### 请求示例
 
 ```bash
+# 0. 获取 JWT（client_id:secret 需在 SERVICE_ACCOUNTS 白名单中）
+curl -X POST http://localhost:8000/auth/token \
+  -H "Authorization: Basic $(echo -n 'partner-a:sk-xxx' | base64)"
+
+# 返回 {"access_token": "eyJ...", "token_type": "bearer", "expires_in": 3600}
+
 # 1. 创建任务
 curl -X POST http://localhost:8000/tasks \
-  -H "Authorization: 3dgs-dev-2026" \
+  -H "Authorization: Bearer eyJ..." \
   -H "projectId: proj-01" \
   -H "Content-Type: application/json" \
   -d '{"externalCode":"EXT-001","fileInfos":[{"fileName":"test.mp4","sha256":"abc","contentLength":16,"fileUrl":""}],"scene":"indoor"}'
 
 # 2. 启动任务
 curl -X POST http://localhost:8000/tasks/{task_id}/start \
-  -H "Authorization: 3dgs-dev-2026" \
+  -H "Authorization: Bearer eyJ..." \
   -H "projectId: proj-01"
 
 # 3. 查询任务
 curl http://localhost:8000/tasks/{task_id} \
-  -H "Authorization: 3dgs-dev-2026" \
+  -H "Authorization: Bearer eyJ..." \
   -H "projectId: proj-01"
 ```
 

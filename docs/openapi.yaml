@@ -13,9 +13,10 @@ info:
     内部流水线阶段（外部只感知 pending / processing / completed / failed）：
       initializing → extracting → colmap → training → compressing → completed
 
-    接口鉴权分为两种策略：
-      - app_auth：创建任务
-      - project_auth：启动、查询、列表、下载、SSE
+    接口鉴权使用 JWT Bearer Token（OAuth2 Client Credentials 风格）：
+      1. 调用 POST /auth/token（Basic Auth）换取 JWT
+      2. 后续请求使用 Authorization: Bearer <JWT>
+      3. 按 client_id 隔离任务数据，归属校验失败返回 404
   version: "4.0.0"
 
 servers:
@@ -31,7 +32,7 @@ paths:
         - taskManagement
       operationId: listTasks
       security:
-        - project_auth: []
+        - bearer_auth: []
       parameters:
         - name: projectId
           in: header
@@ -61,7 +62,7 @@ paths:
         - taskManagement
       operationId: createTask
       security:
-        - app_auth: []
+        - bearer_auth: []
       parameters:
         - name: projectId
           in: header
@@ -97,7 +98,7 @@ paths:
         - taskManagement
       operationId: startTask
       security:
-        - project_auth: []
+        - bearer_auth: []
       parameters:
         - name: projectId
           in: header
@@ -139,7 +140,7 @@ paths:
         - taskManagement
       operationId: getTask
       security:
-        - project_auth: []
+        - bearer_auth: []
       parameters:
         - name: projectId
           in: header
@@ -173,7 +174,7 @@ paths:
         - fileTransfer
       operationId: uploadFile
       security:
-        - app_auth: []
+        - bearer_auth: []
       parameters:
         - name: taskId
           in: path
@@ -211,7 +212,7 @@ paths:
         - fileTransfer
       operationId: downloadFile
       security:
-        - project_auth: []
+        - bearer_auth: []
       parameters:
         - name: projectId
           in: header
@@ -306,16 +307,11 @@ paths:
 
 components:
   securitySchemes:
-    app_auth:
-      type: apiKey
-      in: header
-      name: Authorization
-      description: 应用级鉴权，创建任务
-    project_auth:
-      type: apiKey
-      in: header
-      name: Authorization
-      description: 项目级鉴权，启动/查询/列表/下载/SSE
+    bearer_auth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer Token（通过 POST /auth/token 获取）
 
   schemas:
     ConnectRet:

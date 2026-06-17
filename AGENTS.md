@@ -57,7 +57,7 @@
 | 任务队列 | Celery 5.4 + Redis 7 | Celery + 内存 broker（`memory://`） |
 | 数据库 | PostgreSQL 15 + SQLAlchemy 2.0 | SQLite + SQLAlchemy 2.0 |
 | 对象存储 | MinIO 7.2 | 本地文件系统（`LocalStorageClient`） |
-| 鉴权 | `Authorization` Header（`app_auth` + `project_auth`） | 同上（`API_KEY` 留空关闭鉴权） |
+| 鉴权 | JWT Bearer Token（OAuth2 Client Credentials） | 同上（`SERVICE_ACCOUNTS` 留空关闭鉴权） |
 | 前端 | 原生 HTML / CSS / JS（无构建工具） | 同上 |
 | 容器化 | Docker Compose（5 服务编排） | 无需 Docker |
 | 测试 | pytest 8.2 + httpx 0.27 + pytest-cov 5.0 + pytest-asyncio 0.23.8 | 同上 |
@@ -105,7 +105,7 @@
 │   │   ├── repository.py      # TaskRepository 数据访问层（API 注入 / Worker 独立双模式）
 │   │   ├── file_utils.py      # 文件魔数校验（detect_mime）
 │   │   ├── id_generator.py    # Snowflake ID 生成器（纯数字递增）
-│   │   ├── auth.py             # Authorization 鉴权（app_auth + project_auth，API_KEY 留空则关闭鉴权）
+│   │   ├── auth.py             # JWT Bearer Token 鉴权（SERVICE_ACCOUNTS 留空则关闭鉴权）
 │   │   ├── task_publisher.py  # API-Worker 解耦桥接（懒加载 + 注册回调）
 │   │   ├── interfaces.py      # StorageClient Protocol 抽象接口
 │   │   ├── storage.py          # 存储工厂（USE_LOCAL_STORAGE 控制 MinIO / 本地切换）
@@ -202,7 +202,9 @@
 | `MINIO_PUBLIC_ENDPOINT` | `""` | MinIO 外部访问地址（预签名 URL 用，留空则用 `MINIO_ENDPOINT`） |
 | `USE_LOCAL_STORAGE` | `false` | 是否强制使用本地文件存储 |
 | `LOCAL_STORAGE_DIR` | `./local_storage` | 本地存储根目录 |
-| `API_KEY` | `""` | 鉴权 Key（留空关闭鉴权） |
+| `SERVICE_ACCOUNTS` | `""` | 逗号分隔的 client_id:secret 白名单（留空关闭鉴权） |
+| `JWT_SECRET_KEY` | `""` | JWT 签名密钥（启用鉴权时必须配置强随机串） |
+| `ADMIN_CLIENT_ID` | `""` | 管理员标识（空 = 无管理豁免） |
 | `API_HOST` | `0.0.0.0` | API 监听地址 |
 | `API_PORT` | `8000` | API 监听端口 |
 | `TASK_PENDING_TTL_HOURS` | `24` | 过期 pending 任务清理阈值（小时） |
@@ -294,21 +296,20 @@ python run_local.py
 
 ### 鉴权策略
 
-所有接口（除静态文件外）需要 `Authorization` Header，分为两种策略：
+使用 OAuth2 Client Credentials 流程（JWT Bearer Token）：
 
-| 策略 | 适用接口 | 说明 |
-|------|---------|------|
-| `app_auth` | `POST /tasks` | 应用级鉴权，创建任务 |
-| `project_auth` | `GET /tasks`, `POST /tasks/{id}/start`, `GET /tasks/{id}`, `GET /tasks/{id}/events`, `GET /tasks/{id}/download` | 项目级鉴权 |
+1. 合作方调用 `POST /auth/token`，使用 `Authorization: Basic base64(client_id:secret)` 换取 JWT
+2. 后续 API 请求携带 `Authorization: Bearer <JWT>`
+3. 服务端验签后从 JWT 中提取 `client_id`，按 `client_id` 隔离任务数据
+
+配置项：
+- `SERVICE_ACCOUNTS` — 逗号分隔的 `client_id:secret` 白名单，留空关闭鉴权
+- `JWT_SECRET_KEY` — JWT 签名密钥（HS256），启用鉴权时必须配置
+- `ADMIN_CLIENT_ID` — 管理员标识，该 clientId 豁免归属校验
 
 所有接口还需 `projectId` Header（最大 20 字符）。
 
-鉴权逻辑（`backend/core/auth.py`）：
-- `.env` 中 `API_KEY` 留空 → **关闭鉴权**（开放访问）
-- `API_KEY` 设置值 → 所有请求需带 `Authorization: <key>`
-- 默认开发 Key：`3dgs-dev-2026`
-
-SSE 端点额外支持 Query 参数传递鉴权信息（`projectId` 和 `Authorization`），因为浏览器 `EventSource` 不支持自定义 Header。
+SSE 和下载端点额外支持 Query 参数传递 Bearer JWT（`Authorization=Bearer <jwt>`），因为浏览器 `EventSource` 不支持自定义 Header。
 
 ### 端点列表
 
@@ -325,27 +326,32 @@ SSE 端点额外支持 Query 参数传递鉴权信息（`projectId` 和 `Authori
 ### REST 请求示例
 
 ```bash
+# 0. 获取 JWT
+curl -X POST http://localhost:8000/auth/token \
+  -H "Authorization: Basic $(echo -n 'partner-a:sk-xxx' | base64)"
+
+# 返回 {"access_token": "eyJ...", "token_type": "bearer", "expires_in": 3600}
+
 # 1. 创建任务（JSON）
 curl -X POST http://localhost:8000/tasks \
-  -H "Authorization: 3dgs-dev-2026" \
+  -H "Authorization: Bearer <JWT>" \
   -H "projectId: proj-01" \
   -H "Content-Type: application/json" \
   -d '{"externalCode":"EXT-001","fileInfos":[{"fileName":"test.mp4","sha256":"abc","contentLength":16,"fileUrl":""}],"scene":"indoor"}'
 
 # 2. 启动任务
 curl -X POST http://localhost:8000/tasks/{task_id}/start \
-  -H "Authorization: 3dgs-dev-2026" \
+  -H "Authorization: Bearer <JWT>" \
   -H "projectId: proj-01"
 
 # 3. 查询任务
 curl http://localhost:8000/tasks/{task_id} \
-  -H "Authorization: 3dgs-dev-2026" \
+  -H "Authorization: Bearer <JWT>" \
   -H "projectId: proj-01"
 
 # 4. 下载文件
-curl "http://localhost:8000/tasks/{task_id}/download?file=model.spz" \
-  -H "Authorization: 3dgs-dev-2026" \
-  -H "projectId: proj-01"
+curl "http://localhost:8000/tasks/{task_id}/download/{filename}?projectId=proj-01" \
+  -H "Authorization: Bearer <JWT>"
 ```
 
 ---
@@ -409,7 +415,7 @@ curl "http://localhost:8000/tasks/{task_id}/download?file=model.spz" \
    - `repository.py`：`TaskRepository` 数据访问层，统一封装 DB 操作。支持 API 注入 Session 和 Worker 独立 Session 双模式
    - `file_utils.py`：`detect_mime()` 通过文件头魔数校验真实 MIME 类型，防止后缀伪造
    - `id_generator.py`：Snowflake 简化版 ID 生成器，15 位纯数字递增
-   - `auth.py`：`_verify_auth_key` 公共逻辑 + `verify_app_auth` / `verify_project_auth`
+   - `auth.py`：`_decode_jwt` 验签 + `get_current_client_id` 提取身份
    - `storage.py`：懒加载代理 `_LazyStorage`，工厂函数 `get_storage()`
    - `local_storage.py` / `minio_storage.py`：统一接口（`upload_file` / `download_file` / `get_presigned_url` / `delete_object` / `put_object`）
 
@@ -499,7 +505,7 @@ chain(
   - `norecursedirs = scripts reference .git .venv`
   - `asyncio_mode = auto`
 - `tests/conftest.py`：
-  - 强制环境变量：`DATABASE_URL=sqlite:///./test.db`、`CELERY_BROKER_URL=memory://`、`API_KEY=test-key`
+  - 强制环境变量：`DATABASE_URL=sqlite:///./test.db`、`CELERY_BROKER_URL=memory://`、`SERVICE_ACCOUNTS=test-client:test-secret`、`JWT_SECRET_KEY=test-jwt-secret`
   - `TestClient` 自动携带 `Authorization: test-key`
   - 使用 `TestingSessionLocal` 覆盖 `get_db` 依赖
   - `setup_db` fixture（`session` 级别、`autouse`）：`Base.metadata.create_all` → `init_db()` → yield → `Base.metadata.drop_all`
@@ -588,7 +594,7 @@ python scripts/integration_test.py
 
 ## 安全注意事项
 
-1. **API Key**：生产环境必须设置强随机 `API_KEY`，前端硬编码的 Key `3dgs-dev-2026` 仅用于开发测试
+1. **ServiceAccount**：生产环境必须设置强随机 `JWT_SECRET_KEY`，`SERVICE_ACCOUNTS` 中的 secret 应使用 `generate_keys.py` 生成
 2. **CORS**：`backend/api/main.py` 中配置 `allow_origins=["*"]`，`allow_credentials=False`，生产环境应限制为具体域名
 3. **文件上传**：`tasks.py` 将上传文件保存到 `local_storage/tasks/{task_id}/`，仅做 `os.path.basename()` 防穿越；后端通过 `detect_mime()` 校验文件头魔数（视频/图片角色不符则拒绝）
 4. **MinIO**：默认使用 `minioadmin/minioadmin`，生产必须修改

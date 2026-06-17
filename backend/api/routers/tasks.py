@@ -21,7 +21,7 @@ from backend.api.schemas.task import (
     TaskListResponse,
     UrlInfo,
 )
-from backend.core.auth import verify_app_auth, verify_project_auth
+from backend.core.auth import _decode_jwt, get_admin_client_id, get_current_client_id
 from backend.core.config import TASK_OUTPUT_DIR, settings
 from backend.core.database import Task, TaskFile, TaskStage, TaskStatus
 from backend.core.file_utils import detect_mime
@@ -37,7 +37,7 @@ def _safe_filename(filename: str) -> str:
     return os.path.basename(filename)
 
 
-def _gen_upload_url(task_id: str, fi: FileInfo) -> UrlInfo:
+def _gen_upload_url(task_id: str, fi: FileInfo, token: str = "") -> UrlInfo:
     """生成上传 URL：MinIO 模式返回预签名 PUT URL，本地模式返回 API 端点。"""
     safe_name = _safe_filename(fi.fileName)
     object_name = f"tasks/{task_id}/{safe_name}"
@@ -47,7 +47,7 @@ def _gen_upload_url(task_id: str, fi: FileInfo) -> UrlInfo:
         logger.info("upload url: MinIO presigned PUT %s", url)
     except Exception:
         url = f"/tasks/{task_id}/upload/{safe_name}"
-        headers = {"Authorization": settings.api_key} if settings.api_key else {}
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
         logger.info("upload url: local API %s", url)
     return UrlInfo(
         objectId=safe_name,
@@ -61,7 +61,7 @@ def _gen_upload_url(task_id: str, fi: FileInfo) -> UrlInfo:
     )
 
 
-def _gen_download_url(task_id: str, tf: TaskFile, project_id: str = "") -> UrlInfo:
+def _gen_download_url(task_id: str, tf: TaskFile, project_id: str = "", token: str = "") -> UrlInfo:
     """生成下载 URL：MinIO 模式返回预签名 GET URL，本地模式返回 API 端点。"""
     try:
         url = storage.get_presigned_url(tf.fileUrl, expires=3600)
@@ -69,8 +69,8 @@ def _gen_download_url(task_id: str, tf: TaskFile, project_id: str = "") -> UrlIn
         url = f"/tasks/{task_id}/download/{tf.fileName}"
         if project_id:
             params = {"projectId": project_id}
-            if settings.api_key:
-                params["Authorization"] = settings.api_key
+            if token:
+                params["Authorization"] = f"Bearer {token}"
             url += f"?{urlencode(params)}"
     return UrlInfo(objectId=tf.fileName, fileName=tf.fileName, url=url, method="GET")
 
@@ -79,12 +79,15 @@ def _gen_download_url(task_id: str, tf: TaskFile, project_id: str = "") -> UrlIn
 def list_tasks(
     projectId: str = Header(..., max_length=20),
     db: Session = Depends(get_database),
-    _auth: str = Depends(verify_project_auth),
+    client_id_token: tuple = Depends(get_current_client_id),
 ):
     """列出指定项目的所有任务."""
-    tasks = (
-        db.query(Task).filter(Task.project_id == projectId).order_by(Task.created_at.desc()).all()
-    )
+    client_id, _ = client_id_token
+    q = db.query(Task).filter(Task.project_id == projectId)
+    admin_id = get_admin_client_id()
+    if client_id and client_id != admin_id:
+        q = q.filter(Task.client_id == client_id)
+    tasks = q.order_by(Task.created_at.desc()).all()
     items = [
         GetTaskRsp(
             taskId=t.id,
@@ -106,13 +109,15 @@ def create_task(
     request: CreateTaskReq,
     projectId: str = Header(..., max_length=20),
     db: Session = Depends(get_database),
-    _auth: str = Depends(verify_app_auth),
+    client_id_token: tuple = Depends(get_current_client_id),
 ):
     """创建3DGS任务。仅接收 JSON 元数据，返回预签名上传 URL。"""
+    client_id, token = client_id_token
     task = Task(
         project_id=projectId,
         external_code=request.externalCode,
         scene=request.scene,
+        client_id=client_id,
         status=TaskStatus.PENDING.value,
         current_stage=TaskStage.INITIALIZING.value,
     )
@@ -123,7 +128,7 @@ def create_task(
     upload_infos = []
     for fi in request.fileInfos:
         safe_name = _safe_filename(fi.fileName)
-        url_info = _gen_upload_url(task.id, fi)
+        url_info = _gen_upload_url(task.id, fi, token=token)
         role = fi.fileRole if fi.fileRole in VALID_FILE_ROLES else "source_video"
         # fileUrl 存完整对象路径（MinIO 操作需要），objectId 只存文件名（给客户端看）
         task_file = TaskFile(
@@ -154,10 +159,16 @@ async def upload_file(
     object_id: str,
     request: Request,
     db: Session = Depends(get_database),
-    _auth: str = Depends(verify_app_auth),
+    client_id_token: tuple = Depends(get_current_client_id),
 ):
     """本地模式：接收客户端 PUT 的文件，写入本地存储。"""
+    client_id, _ = client_id_token
     safe_name = _safe_filename(os.path.basename(object_id))
+
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if task:
+        _check_ownership(task, client_id)
+
     task_dir = os.path.join(TASK_OUTPUT_DIR, str(task_id))
     await aiofiles.os.makedirs(task_dir, exist_ok=True)
 
@@ -215,17 +226,30 @@ async def upload_file(
     return {"ret": {"code": 0, "msg": "success"}, "fileName": safe_name, "size": len(content)}
 
 
+def _check_ownership(task: Task, client_id: str):
+    """校验调用者是否拥有该任务。管理员豁免。"""
+    if not client_id:
+        return
+    admin_id = get_admin_client_id()
+    if admin_id and client_id == admin_id:
+        return
+    if task.client_id != client_id:
+        raise HTTPException(status_code=404, detail={"ret": {"code": 404, "msg": "Task not found"}})
+
+
 @router.post("/{task_id}/start", response_model=StartTaskRsp)
 def start_task(
     task_id: str,
     projectId: str = Header(..., max_length=20),
     db: Session = Depends(get_database),
-    _auth: str = Depends(verify_project_auth),
+    client_id_token: tuple = Depends(get_current_client_id),
 ):
     """启动任务（pending → processing）."""
+    client_id, _ = client_id_token
     task = db.query(Task).filter(Task.id == task_id, Task.project_id == projectId).first()
     if not task:
         raise HTTPException(status_code=404, detail={"ret": {"code": 404, "msg": "Task not found"}})
+    _check_ownership(task, client_id)
 
     if task.status != TaskStatus.PENDING.value:
         raise HTTPException(
@@ -288,10 +312,14 @@ def query_task(
     task_id: str,
     projectId: str = Header(..., max_length=20),
     db: Session = Depends(get_database),
-    _auth: str = Depends(verify_project_auth),
+    client_id_token: tuple = Depends(get_current_client_id),
 ):
     """查询任务状态及输出文件."""
-    task = db.query(Task).filter(Task.id == task_id, Task.project_id == projectId).first()
+    client_id, token = client_id_token
+    q = db.query(Task).filter(Task.id == task_id, Task.project_id == projectId)
+    if client_id:
+        q = q.filter(Task.client_id == client_id)
+    task = q.first()
     if not task:
         raise HTTPException(status_code=404, detail={"ret": {"code": 404, "msg": "Task not found"}})
 
@@ -306,7 +334,7 @@ def query_task(
         .all()
     )
     for f in output_files:
-        download_infos.append(_gen_download_url(task.id, f, project_id=projectId))
+        download_infos.append(_gen_download_url(task.id, f, project_id=projectId, token=token))
 
     return GetTaskRsp(
         taskId=task.id,
@@ -331,9 +359,16 @@ def download_file(
     db: Session = Depends(get_database),
 ):
     """下载任务输出文件."""
-    from backend.core.auth import _verify_auth_key
+    from backend.core.auth import _auth_enabled
 
-    _verify_auth_key(auth_h or auth_q)
+    token_str = auth_h or auth_q or ""
+    token_str = token_str.replace("Bearer ", "")
+    client_id = ""
+    if token_str and _auth_enabled():
+        payload = _decode_jwt(token_str)
+        client_id = payload.get("client_id", "")
+    elif _auth_enabled():
+        raise HTTPException(status_code=401, detail="Missing Authorization header")
     pid = projectId_h or projectId_q
     if not pid:
         raise HTTPException(
@@ -343,6 +378,7 @@ def download_file(
     task = db.query(Task).filter(Task.id == task_id, Task.project_id == pid).first()
     if not task:
         raise HTTPException(status_code=404, detail={"ret": {"code": 404, "msg": "Task not found"}})
+    _check_ownership(task, client_id)
 
     safe_name = _safe_filename(os.path.basename(object_id))
     task_file = (

@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from backend.api.routers import sse, tasks
+from backend.api.routers import auth, sse, tasks
 from backend.core.database import init_db
 
 
@@ -29,6 +29,7 @@ app.add_middleware(
 )
 
 # API 路由注册
+app.include_router(auth.router)
 app.include_router(tasks.router)
 app.include_router(sse.router)
 
