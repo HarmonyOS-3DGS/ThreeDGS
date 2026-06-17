@@ -3,7 +3,9 @@
 import os
 import tempfile
 
-from backend.core.database import SessionLocal, TaskFile
+import pytest
+
+from backend.core.database import SessionLocal, Task, TaskFile
 from backend.core.repository import TaskRepository
 
 
@@ -59,6 +61,62 @@ class TestFindFileByName:
             finally:
                 db.close()
             _cleanup(tf)
+
+
+class TestClientIdFiltering:
+    """Repository 的 client_id 过滤行为。"""
+
+    @pytest.fixture(autouse=True)
+    def _clean_tasks(self, db_session):
+        db_session.query(Task).delete()
+        db_session.commit()
+
+    def test_create_stores_client_id(self, db_session):
+        repo = TaskRepository(db_session)
+        task = repo.create("proj-1", "ext-1", "indoor", client_id="partner-a")
+        db_session.commit()
+        assert task.client_id == "partner-a"
+
+    def test_get_filters_by_client_id(self, db_session):
+        repo = TaskRepository(db_session)
+        t1 = repo.create("proj-1", "ext-a", "indoor", client_id="partner-a")
+        repo.create("proj-1", "ext-b", "indoor", client_id="partner-b")
+        db_session.commit()
+
+        got = repo.get(t1.id, project_id="proj-1", client_id="partner-a")
+        assert got is not None
+        assert got.id == t1.id
+
+        got_b = repo.get(t1.id, project_id="proj-1", client_id="partner-b")
+        assert got_b is None
+
+    def test_get_ignores_client_id_when_none(self, db_session):
+        repo = TaskRepository(db_session)
+        t = repo.create("proj-1", "ext", "indoor", client_id="partner-a")
+        db_session.commit()
+
+        got = repo.get(t.id, project_id="proj-1")
+        assert got is not None
+        assert got.id == t.id
+
+    def test_list_by_project_filters_by_client_id(self, db_session):
+        repo = TaskRepository(db_session)
+        repo.create("proj-1", "ext-a", "indoor", client_id="partner-a")
+        repo.create("proj-1", "ext-b", "indoor", client_id="partner-b")
+        repo.create("proj-1", "ext-c", "indoor", client_id="partner-a")
+        db_session.commit()
+
+        tasks = repo.list_by_project("proj-1", client_id="partner-a")
+        assert len(tasks) == 2
+
+    def test_list_by_project_returns_all_when_no_client_id(self, db_session):
+        repo = TaskRepository(db_session)
+        repo.create("proj-1", "ext-a", "indoor", client_id="partner-a")
+        repo.create("proj-1", "ext-b", "indoor", client_id="partner-b")
+        db_session.commit()
+
+        tasks = repo.list_by_project("proj-1")
+        assert len(tasks) == 2
 
 
 def _cleanup(tf: TaskFile):
