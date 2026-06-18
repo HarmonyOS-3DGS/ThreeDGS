@@ -44,7 +44,7 @@ def get_db():
 def _ensure_client_id_column():
     """迁移：为已有 tasks 表添加 client_id 列。"""
     from sqlalchemy import text
-    from sqlalchemy.exc import OperationalError
+    from sqlalchemy.exc import SQLAlchemyError
 
     try:
         with engine.connect() as conn:
@@ -52,8 +52,8 @@ def _ensure_client_id_column():
                 text("ALTER TABLE tasks ADD COLUMN client_id VARCHAR(64) NOT NULL DEFAULT ''")
             )
             conn.commit()
-    except OperationalError:
-        pass
+    except SQLAlchemyError:
+        pass  # 列已存在或表已含此列，静默忽略
 
 
 def init_db():
