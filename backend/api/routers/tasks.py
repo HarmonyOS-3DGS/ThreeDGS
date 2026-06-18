@@ -260,7 +260,13 @@ def start_task(
     task.status = TaskStatus.PROCESSING.value
     task.current_stage = TaskStage.INITIALIZING.value
     task.progress = 0
-    task.remaining_time = settings.alg_expected_seconds if settings.alg_enabled else 15
+    task.remaining_time = (
+        settings.alg2_expected_seconds
+        if settings.alg_enabled and task.scene == "commodity"
+        else settings.alg_expected_seconds
+        if settings.alg_enabled
+        else 15
+    )
     db.commit()
 
     task_files = db.query(TaskFile).filter(TaskFile.task_id == task_id).all()

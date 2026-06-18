@@ -66,6 +66,20 @@ class Settings(BaseSettings):
     alg_max_seconds: int = Field(default=3600)
     alg_host_data_dir: str = Field(default="/data/3dgs")
 
+    # 外部算法 2（commodity 场景专用）
+    alg2_image: str = Field(default="alg_image:v1")
+    alg2_work_dir: str = Field(default="/data/dist_so")
+    alg2_script: str = Field(default="test.py")
+    alg2_extra_args: str = Field(default="-s -m 6 --video_mode")
+    alg2_ply_name: str = Field(default="recon_result.ply")
+    alg2_ply_userdata_rel: str = Field(default="dist_so/UserData")
+    # 算法内部取输入路径最后两层目录名拼接成子目录名：test_task_id_{dir1}_{dir2}
+    # 当前输入 /data/tasks/{task_id} → dir1=tasks, dir2={task_id} → "test_task_id_tasks_{task_id}"
+    alg2_ply_subdir_prefix: str = Field(default="test_task_id_tasks_")
+    alg2_expected_seconds: int = Field(default=360)  # 6 分钟
+    alg2_max_seconds: int = Field(default=1800)  # 30 分钟超时
+    alg2_shm_size: str = Field(default="64g")
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

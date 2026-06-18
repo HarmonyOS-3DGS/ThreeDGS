@@ -253,12 +253,18 @@ initializing (0%)
 
 ## 8. 外部算法一体化模式
 
-通过 `ALG_ENABLED=true` 切换，Worker 通过 `docker run` 调用独立算法镜像：
+通过 `ALG_ENABLED=true` 切换，按 scene 字段路由到不同算法：
 
 ```
 Worker (Celery task)
-  └─ subprocess.run(["docker", "run", ...alg_image...])
-  └─ 等待退出 → 搜 PLY → 上传 MinIO → 写 DB → completed
+  └─ pipeline.py 查 DB 获 task.scene
+      ├─ scene=commodity → commodity_algorithm
+      │   └─ docker run alg2_image → bash -c "python -m pip uninstall xformers -y && cd ... && python test.py -d /data/tasks/{id} ..."
+      │       └─ -v /data/3dgs:/data（两算法共用）
+      │   └─ 阻塞等待退出 → UserData/ 下搜 recon_result.ply → finalize_outputs → completed
+      └─ 其他 scene → external_algorithm
+          └─ docker run alg_image → python alg_script --input_dir /data/tasks/{id} --output_dir ...
+          └─ 阻塞等待退出 → 搜 point_cloud.ply → finalize_outputs → completed
 ```
 
 配置项：
@@ -266,13 +272,21 @@ Worker (Celery task)
 | 配置项 | 说明 |
 |--------|------|
 | `ALG_ENABLED` | 模式开关 |
-| `ALG_IMAGE` | 算法 Docker 镜像 |
-| `ALG_SCRIPT` | 入口脚本 |
-| `ALG_OUTPUT_DIR` | 输出子目录 |
-| `ALG_PLY_NAME` | PLY 文件名 |
-| `ALG_PLY_SUBDIR` | PLY 搜索路径 |
+| `ALG_IMAGE` | 算法 1 Docker 镜像 |
+| `ALG_SCRIPT` | 算法 1 入口脚本 |
+| `ALG_OUTPUT_DIR` | 算法 1 输出子目录 |
+| `ALG_PLY_NAME` | 算法 1 PLY 文件名 |
+| `ALG_PLY_SUBDIR` | 算法 1 PLY 搜索路径 |
 | `ALG_HOST_DATA_DIR` | 宿主机数据目录 |
-| `ALG_EXPECTED_SECONDS` | 预计执行时间（秒） |
-| `ALG_MAX_SECONDS` | 最大超时时间（秒） |
+| `ALG_EXPECTED_SECONDS` | 算法 1 预计执行时间（秒） |
+| `ALG_MAX_SECONDS` | 算法 1 最大超时时间（秒） |
+| `ALG2_IMAGE` | 算法 2 Docker 镜像 |
+| `ALG2_WORK_DIR` | 算法 2 工作目录 |
+| `ALG2_SCRIPT` | 算法 2 入口脚本 |
+| `ALG2_EXTRA_ARGS` | 算法 2 额外命令行参数 |
+| `ALG2_PLY_NAME` | 算法 2 PLY 文件名 |
+| `ALG2_EXPECTED_SECONDS` | 算法 2 预计执行时间（秒） |
+| `ALG2_MAX_SECONDS` | 算法 2 最大超时时间（秒） |
+| `ALG2_SHM_SIZE` | 算法 2 共享内存大小 |
 
 完整接口契约见 `docs/openapi.yaml`，数据库设计见 `docs/database_design.md`。

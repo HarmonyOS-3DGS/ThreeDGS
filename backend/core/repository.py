@@ -87,25 +87,25 @@ class TaskRepository:
 
     @staticmethod
     def update_progress(
-        task_id: str, stage: str, progress: int, status: str | None = None, error: str | None = None
+        task_id: str,
+        stage: str,
+        progress: int,
+        status: str | None = None,
+        error: str | None = None,
+        expected_seconds: int | None = None,
     ) -> None:
-        """更新任务进度。remaining_time 按 stub 15 秒线性递减估算。"""
+        """更新任务进度。remaining_time 按预期时长线性递减估算。"""
         db = SessionLocal()
         try:
             task = db.query(Task).filter(Task.id == task_id).first()
             if task:
                 task.current_stage = stage
                 task.progress = progress
+                es = expected_seconds or (
+                    settings.alg_expected_seconds if settings.alg_enabled else 15
+                )
                 task.remaining_time = (
-                    0
-                    if status == "completed"
-                    else max(
-                        0,
-                        settings.alg_expected_seconds
-                        - progress * settings.alg_expected_seconds // 100,
-                    )
-                    if settings.alg_enabled
-                    else max(0, 15 - progress // 7)
+                    0 if status == "completed" else max(0, es - progress * es // 100)
                 )
                 if status:
                     task.status = status

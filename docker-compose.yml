@@ -70,6 +70,14 @@ services:
       - ALG_PLY_SUBDIR=gaussian_splatting/out/train/grid_0_0/point_cloud
       - ALG_EXPECTED_SECONDS=960
       - ALG_MAX_SECONDS=3600
+      - ALG2_IMAGE=${ALG2_IMAGE:-alg_image:v1}
+      - ALG2_WORK_DIR=/data/dist_so
+      - ALG2_SCRIPT=test.py
+      - ALG2_EXTRA_ARGS=-s -m 6 --video_mode
+      - ALG2_PLY_NAME=recon_result.ply
+      - ALG2_EXPECTED_SECONDS=360
+      - ALG2_MAX_SECONDS=1800
+      - ALG2_SHM_SIZE=64g
       - OUTPUT_TYPES=${OUTPUT_TYPES:-["raw_model"]}
       - LOG_FILE=/app/logs/3dgs.log
     depends_on:
@@ -82,6 +90,7 @@ services:
     volumes:
       - /data/3dgs/tasks:/app/local_storage/tasks
       - /data/3dgs/logs:/app/logs
+      - /data/3dgs:/data/3dgs
       - /var/run/docker.sock:/var/run/docker.sock
 
   redis:

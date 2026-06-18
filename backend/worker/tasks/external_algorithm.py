@@ -10,21 +10,9 @@ import docker
 from backend.core.config import settings
 from backend.core.repository import TaskRepository
 from backend.worker.celery_app import app
-from backend.worker.tasks.shared import task_output_path
+from backend.worker.tasks.shared import find_newest_ply, task_output_path
 
 logger = logging.getLogger(__name__)
-
-
-def _find_newest_ply(search_dir: str, filename: str) -> str | None:
-    """递归搜索指定文件名的 ply，返回最新的全路径。"""
-    results = []
-    for root, _dirs, files in os.walk(search_dir):
-        for f in files:
-            if f == filename:
-                results.append(os.path.join(root, f))
-    if not results:
-        return None
-    return max(results, key=os.path.getmtime)
 
 
 @app.task(bind=True, time_limit=settings.alg_max_seconds)
@@ -130,9 +118,9 @@ def run_external_algorithm(self, task_id: str, video_path: str):
 
     search_dir = os.path.join(local_output, settings.alg_ply_subdir.strip("/"))
     ply_path = (
-        _find_newest_ply(search_dir, settings.alg_ply_name)
+        find_newest_ply(search_dir, settings.alg_ply_name)
         if os.path.isdir(search_dir)
-        else _find_newest_ply(local_output, settings.alg_ply_name)
+        else find_newest_ply(local_output, settings.alg_ply_name)
     )
     if not ply_path:
         logger.error("alg PLY not found task=%s dir=%s", task_id, local_output)

@@ -132,6 +132,7 @@
 │           ├── train_gs.py
 │           ├── compress.py
 │           ├── external_algorithm.py  # 外部算法一体化（docker run + PLY 搜索）
+│           ├── commodity_algorithm.py # commodity 场景外部算法
 │           └── cleanup.py      # 过期 pending / completed 任务清理（Celery Beat）
 ├── frontend/                   # 静态前端（原生 HTML/JS/CSS，无构建工具）
 │   ├── index.html              # 上传页面（创建任务 + 启动训练）
@@ -220,6 +221,14 @@
 | `ALG_HOST_DATA_DIR` | `/data/3dgs` | 宿主机数据盘路径 worker |
 | `ALG_EXPECTED_SECONDS` | `960` | 预计执行时间（秒，进度条计算用） |
 | `ALG_MAX_SECONDS` | `3600` | 最大超时时间（秒，Celery 硬限制） |
+| `ALG2_IMAGE` | `alg_image:v1` | commodity 算法 Docker 镜像名 |
+| `ALG2_WORK_DIR` | `/data/dist_so` | commodity 算法工作目录 |
+| `ALG2_SCRIPT` | `test.py` | commodity 算法入口脚本 |
+| `ALG2_EXTRA_ARGS` | `-s -m 6 --video_mode` | commodity 算法额外命令行参数 |
+| `ALG2_PLY_NAME` | `recon_result.ply` | commodity 搜索的 PLY 文件名 |
+| `ALG2_EXPECTED_SECONDS` | `360` | commodity 预计执行时间（秒） |
+| `ALG2_MAX_SECONDS` | `1800` | commodity 最大超时时间（秒） |
+| `ALG2_SHM_SIZE` | `64g` | commodity 算法 shm-size |
 
 ---
 
@@ -443,19 +452,26 @@ curl "http://localhost:8000/tasks/{task_id}/download/{filename}?projectId=proj-0
 | 模式 | 说明 | 各阶段 |
 |------|------|--------|
 | 默认（`false`） | 四阶段 Stub 流水线 | extracting → colmap → training → compressing |
-| 外部算法（`true`） | 单阶段一体化 Docker 调用 | training（docker run 阻塞执行 → 搜 PLY → 上传 MinIO） |
+| 外部算法（`true`） | 按 scene 路由 | commodity 走 commodity_algorithm，其余走 external_algorithm |
 
 ### 外部算法模式流程
 
 ```
 Worker 收到任务
-  └─ subprocess.run(["docker", "run", ...alg_image...])
-      └─ -v /data/3dgs:/data                 ← 数据盘全文挂载
-      └─ --input_dir /data/tasks/{id}         ← 算法读视频
-      └─ --output_dir /data/tasks/{id}/output ← 算法写产出
-  └─ 阻塞等待 docker run 退出
-  └─ output/alg_ply_subdir/ 下搜 point_cloud.ply（取最新）
-  └─ 上传 MinIO → 写 DB → completed
+  └─ pipeline.py 查 DB 获 task.scene
+      ├─ scene=commodity → commodity_algorithm
+      │   └─ docker run alg2_image → bash -c "pip uninstall && cd /data/dist_so && python test.py -d /data/tasks/{id}"
+      │       └─ -v /data/3dgs:/data         ← 两算法共用宿主机目录
+      │       └─ --shm-size=64G, --user root
+      │   └─ 阻塞等待退出
+      │   └─ dist_so/UserData/ 下搜 recon_result.ply（精确路径优先）
+      └─ 其他 scene → external_algorithm
+          └─ docker run alg_image → python alg_script --input_dir /data/tasks/{id} --output_dir ...
+              └─ -v /data/3dgs:/data
+          └─ 阻塞等待退出
+          └─ output/alg_ply_subdir/ 下搜 point_cloud.ply（取最新）
+  └─ finalize_outputs（通用输出处理器：复制/压缩/上传/写DB）
+  └─ completed
 ```
 
 ### 外部状态（`TaskStatus`，对用户暴露）
@@ -517,6 +533,7 @@ chain(
 | `test_api/test_upload.py` | JSON / multipart 创建任务、必填参数缺失、缺少 `projectId` |
 | `test_api/test_projects.py` | 查询任务、启动任务、重复启动、启动后状态变更 |
 | `test_api/test_sse.py` | SSE 端点连通性、`text/event-stream` Content-Type、不存在任务 |
+| `test_worker/test_commodity_algorithm.py` | commodity 算法 Docker SDK 执行、PLY 搜索、故障处理 |
 | `test_core/test_storage.py` | MinIO 客户端的 `upload_file` / `download_file` / `get_presigned_url` / `delete_object` mock 测试 |
 | `test_worker/test_extract_frames.py` | 帧提取任务执行 |
 | `test_worker/test_colmap.py` | COLMAP 任务执行 |
