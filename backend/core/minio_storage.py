@@ -1,6 +1,7 @@
 """MinIO 对象存储客户端封装。"""
 
 import logging
+import time
 from datetime import timedelta
 from io import BytesIO
 from urllib.request import Request, urlopen
@@ -11,6 +12,8 @@ from minio.error import S3Error
 from backend.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+_RETRY_BACKOFF = [1, 2, 4, 8]  # 秒
 
 
 class MinioStorageClient:
@@ -56,11 +59,20 @@ class MinioStorageClient:
         return self._presign_client
 
     def _ensure_bucket(self):
-        """确保目标存储桶存在并配置 CORS 跨域访问。"""
-        if not self.client.bucket_exists(self.bucket):
-            self.client.make_bucket(self.bucket)
-            logger.info("MinIO bucket created: %s", self.bucket)
-        self._configure_cors()
+        """确保目标存储桶存在并配置 CORS 跨域访问。首次连接 MinIO 可能未就绪，带退避重试。"""
+        last_err = None
+        for delay in _RETRY_BACKOFF:
+            try:
+                if not self.client.bucket_exists(self.bucket):
+                    self.client.make_bucket(self.bucket)
+                    logger.info("MinIO bucket created: %s", self.bucket)
+                self._configure_cors()
+                return
+            except Exception as e:
+                last_err = e
+                logger.warning("MinIO not ready, retry in %ds: %s", delay, e)
+                time.sleep(delay)
+        raise RuntimeError(f"MinIO unavailable after {len(_RETRY_BACKOFF)} retries") from last_err
 
     def _configure_cors(self):
         """通过 MinIO API 配置 CORS，允许浏览器跨域上传/下载。"""

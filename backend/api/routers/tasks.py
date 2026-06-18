@@ -45,10 +45,10 @@ def _gen_upload_url(task_id: str, fi: FileInfo, token: str = "") -> UrlInfo:
         url = storage.get_presigned_put_url(object_name, expires=3600)
         headers = {}
         logger.info("upload url: MinIO presigned PUT %s", url)
-    except Exception:
+    except Exception as e:
         url = f"/tasks/{task_id}/upload/{safe_name}"
         headers = {"Authorization": f"Bearer {token}"} if token else {}
-        logger.info("upload url: local API %s", url)
+        logger.warning("upload url: local API %s (presign failed: %s)", url, e)
     return UrlInfo(
         objectId=safe_name,
         fileName=safe_name,

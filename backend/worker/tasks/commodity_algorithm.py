@@ -91,8 +91,17 @@ def run_commodity_algorithm(self, task_id: str, video_path: str):
         logs_lines: list[str] = []
 
         def stream_logs():
-            for line in container.logs(stream=True, follow=True):
-                text = line.decode("utf-8", errors="replace").rstrip()
+            buf = b""
+            for chunk in container.logs(stream=True, follow=True):
+                buf += chunk
+                while b"\n" in buf:
+                    line, buf = buf.split(b"\n", 1)
+                    text = line.decode("utf-8", errors="replace").rstrip()
+                    if text:
+                        logger.info("alg2: %s", text)
+                        logs_lines.append(text)
+            if buf:
+                text = buf.decode("utf-8", errors="replace").rstrip()
                 if text:
                     logger.info("alg2: %s", text)
                     logs_lines.append(text)
