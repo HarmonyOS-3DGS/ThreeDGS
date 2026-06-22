@@ -112,9 +112,9 @@ python run_local.py
 │   │   └── models/             # 空壳模型层
 │   └── core/                   # 配置、数据库、存储、鉴权
 ├── frontend/                   # 静态前端页面
-├── tests/                      # pytest 测试套件（29个测试）
+├── tests/                      # pytest 测试套件（114+个测试）
 ├── scripts/                    # 集成测试脚本
-├── docker-compose.yml          # 六服务容器编排
+├── docker-compose.yml          # 五服务容器编排
 ├── run_local.bat / run_local.sh # 一键启动脚本
 ├── .env.local                  # 本地轻量配置
 └── requirements.txt

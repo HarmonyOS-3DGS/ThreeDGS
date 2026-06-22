@@ -59,7 +59,7 @@
 backend/worker/models/
   preprocessor.py  ←──────  3dgs_engineering_guide/Ch3 (FFmpeg + COLMAP)
   trainer.py       ←──────  3dgs_engineering_guide/Ch4 (gsplat/Nerfstudio)
-  compressor.py    ←──────  3dgs_engineering_guide/Ch5 (SPZ/SOG 压缩)
+  compressor.py    ←──────  3dgs_engineering_guide/Ch5 (SPZ/SOG 压缩，`compress_result` 已被 `finalize_outputs` 替代)
 
 frontend/viewer.html ←───── 3dgs_engineering_guide/Ch6 (Web 渲染器选型)
                              Kimi_Agent_Demo/ViewerPage.tsx (gaussian-splats-3d)
@@ -67,8 +67,8 @@ frontend/viewer.html ←───── 3dgs_engineering_guide/Ch6 (Web 渲染�
 backend/api/       ←──────  Kimi_Agent_Demo/routers/ (JWT 鉴权可借鉴)
 backend/core/      ←──────  Kimi_Agent_Demo/models.py (Scene 元数据模型)
 
-docker-compose.yml ←──────  3dgs_engineering_guide/Ch7 (GPU 调度架构)
-                             3dgs_roadmap/Phase 2 (多 GPU + 监控)
+docker-compose.yml / deploy/ ←── 3dgs_engineering_guide/Ch7 (GPU 调度架构)
+                                 3dgs_roadmap/Phase 2 (多 GPU + 监控)
 ```
 
 ---
@@ -95,12 +95,12 @@ docker-compose.yml ←──────  3dgs_engineering_guide/Ch7 (GPU 调度
 
 | 项目 | 参考文档 | 说明 | 优先级 |
 |------|---------|------|--------|
-| 多机分布式部署 | `todo/20260617.md` | nginx 反代 + MinIO 分布式 8 节点 + Worker 分散部署 | **高** |
-| HTTPS + ELB | `todo/20260617.md §9` | 公网 ELB 做 HTTPS 终结，M1 只对内网 HTTP | **高** |
+| 多机分布式部署 | `todo/20260622.md` | nginx 反代 + MinIO 分布式 N 节点 + Worker 分散部署 | **高** |
+| HTTPS + ELB | `todo/20260622.md` | 公网 ELB 做 HTTPS 终结，M1 只对内网 HTTP | **高** |
+| 排队估算与超时检测 | `todo/20260622-features.md` | `remaining_time` 含排队时间，Worker 崩溃后自动标记超时任务 | **高** |
 | Web 3D 查看器 | `3dgs_guide/Ch6` + `Kimi_Demo/ViewerPage` | 替换 PlayCanvas iframe 为 GaussianSplats3D + Three.js | 中 |
 | 进度上报真实化 | — | 外部算法模式下按算法输出实时进度（非固定值） | 中 |
 | GPU 资源调度 | `3dgs_guide/Ch7` | 多 GPU Worker 分配策略 | 低 |
-| 真实 Stub 替换（非外部算法模式用） | `3dgs_guide/Ch3-5` | 帧提取/COLMAP/训练/压缩 原生实现 | 低 |
 
 ### 远期规划（Phase 3+）
 

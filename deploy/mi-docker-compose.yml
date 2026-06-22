@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    network_mode: host
+    command: >
+      server
+      http://M1_IP:9002/data
+      http://M2_IP:9000/data
+      http://M3_IP:9000/data
+      --console-address ":9001"
+    volumes:
+      - /data:/data
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+
+  worker:
+    build:
+      context: ..
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    network_mode: host
+    command: celery -A backend.worker.celery_app worker --loglevel=info -c 1 --pool=solo
+    environment:
+      DATABASE_URL: postgresql://postgres:password@M1内网IP:5432/gaussian
+      CELERY_BROKER_URL: redis://M1内网IP:6379/0
+      CELERY_RESULT_BACKEND: redis://M1内网IP:6379/0
+      MINIO_ENDPOINT: 127.0.0.1:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET: gaussian
+      MINIO_SECURE: "false"
+      MINIO_PUBLIC_ENDPOINT: M1公网IP:9000
+      USE_LOCAL_STORAGE: "false"
+      LOCAL_STORAGE_DIR: /app/local_storage
+      SERVICE_ACCOUNTS: dev-admin:sk-debug
+      JWT_SECRET_KEY: ...
+      ADMIN_CLIENT_ID: dev-admin
+      ALG_ENABLED: "true"
+      ALG_IMAGE: alg_pipeline
+      ALG_SCRIPT: alg_pipeline.pyc
+      ALG_HOST_DATA_DIR: /data/3dgs
+      ALG_OUTPUT_DIR: output
+      ALG_PLY_NAME: point_cloud.ply
+      ALG_PLY_SUBDIR: gaussian_splatting/out/train/grid_0_0/point_cloud
+      ALG_EXPECTED_SECONDS: 960
+      ALG_MAX_SECONDS: 3600
+      ALG2_IMAGE: alg_image:v1
+      ALG2_WORK_DIR: /data/dist_so
+      ALG2_SCRIPT: test.py
+      ALG2_EXTRA_ARGS: -s -m 6 --video_mode
+      ALG2_PLY_NAME: recon_result.ply
+      ALG2_EXPECTED_SECONDS: 360
+      ALG2_MAX_SECONDS: 1800
+      ALG2_SHM_SIZE: 64g
+      OUTPUT_TYPES: '["raw_model"]'
+      LOG_FILE: /app/logs/3dgs.log
+      WORKER_COUNT: "3"
+    volumes:
+      - /data/3dgs/tasks:/app/local_storage/tasks
+      - /data/3dgs/logs:/app/logs
+      - /data/3dgs:/data/3dgs
+      - /var/run/docker.sock:/var/run/docker.sock

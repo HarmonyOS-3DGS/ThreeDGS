@@ -58,7 +58,7 @@ class TestTasks:
         assert resp.status_code == 200
         data = resp.json()
         assert data["ret"]["code"] == 0
-        assert data["remainingTime"] == 15
+        assert data["remainingTime"] >= 15  # 自身剩余时间 + 排队时间
 
     @pytest.mark.skipif(sys.platform == "win32", reason="Windows asyncio/anyio crash bug")
     def test_start_already_started(self, client):

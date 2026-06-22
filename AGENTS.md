@@ -166,6 +166,10 @@
 ├── docs/                       # 文档
 │   ├── openapi.yaml            # OpenAPI 3.0 接口文档
 │   └── reference_guide.md      # 参考指南
+├── deploy/                     # 多机分布式部署模板
+│   ├── m1-docker-compose.yml   # M1 入口机编排（nginx + api + redis + db + MinIO + Worker）
+│   ├── mi-docker-compose.yml   # Worker 节点编排（MinIO + Worker）
+│   └── nginx-minio.conf        # nginx 反代配置（80→api，9000→MinIO 集群）
 ├── docker-compose.yml          # 5 服务编排（api / worker / redis / db / minio）+ 3 个卷
 ├── Dockerfile.api              # API 服务镜像（python:3.11-slim）
 ├── Dockerfile.worker           # Worker 服务镜像（python:3.11-slim）
@@ -229,6 +233,7 @@
 | `ALG2_EXPECTED_SECONDS` | `360` | commodity 预计执行时间（秒） |
 | `ALG2_MAX_SECONDS` | `1800` | commodity 最大超时时间（秒） |
 | `ALG2_SHM_SIZE` | `64g` | commodity 算法 shm-size |
+| `WORKER_COUNT` | `1` | Worker 数量（用于排队时间估算，分布式场景设为实际 Worker 数） |
 
 ---
 
@@ -502,17 +507,13 @@ Worker 收到任务
 Celery 任务链在 `backend/worker/tasks/pipeline.py` 中通过 `celery.chain` 编排：
 
 ```python
-chain(
-    extract_frames.s(task_id, video_path, fps=settings.default_fps),
-    run_colmap.s(),
-    train_gaussian_splatting.s(iterations=settings.default_iterations),
-    compress_result.s(),
-)
+# 外部算法模式：external_algorithm → finalize_outputs
+# Stub 四阶段模式：extract_frames → run_colmap → train_gaussian_splatting → finalize_outputs
 ```
 
-各阶段通过 `prev_result: dict` 累加传递路径参数：`task_id` → `frames_dir` → `colmap_dir` → `model_path` → `compressed_spz` / `compressed_sog`。
+各阶段通过 `prev_result: dict` 累加传递路径参数：`task_id` → `frames_dir` → `colmap_dir` → `model_path` → `outputs` dict。
 
-每个 Worker 任务内部通过 `backend/worker/tasks/shared.py` 中的 `update_task()` 直接操作数据库，使用 `SessionLocal` 新建独立 session，并用 `try/finally` 确保关闭。进度更新中的 `self.update_state` 使用 `try/except` 静默忽略，避免测试环境无 Celery 上下文时崩溃。
+每个 Worker 任务内部通过 `backend/core/repository.py` 中的 `TaskRepository.update_progress()` 静态方法直接操作数据库，使用 `SessionLocal` 新建独立 session，并用 `try/finally` 确保关闭。进度更新中的 `self.update_state` 使用 `try/except` 静默忽略，避免测试环境无 Celery 上下文时崩溃。
 
 ---
 

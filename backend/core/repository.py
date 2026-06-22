@@ -22,7 +22,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from backend.core.config import settings
-from backend.core.database import SessionLocal, Task, TaskFile, TaskStatus
+from backend.core.database import SessionLocal, Task, TaskFile, TaskStage, TaskStatus
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +83,78 @@ class TaskRepository:
             .first()
         )
 
+    # ── 排队估算（API / Worker 共用）─────────────────────
+
+    @staticmethod
+    def _max_duration_for_scene(scene: str) -> int:
+        """根据场景获取任务的最大超时秒数。"""
+        if scene == "commodity":
+            return settings.alg2_max_seconds
+        return settings.alg_max_seconds if settings.alg_enabled else 3600
+
+    @staticmethod
+    def estimate_queue_wait(db: Session, task: Task, es: int) -> int:
+        """估算包含排队时间的剩余秒数。
+
+        考虑当前正在运行且未超时的 processing 任务，
+        以及排在当前任务之前的 pending 任务。
+        超过最大时长的 processing 任务不计入排队（已失效）。
+        """
+        now = datetime.utcnow()
+        processing_ahead = 0
+        for t in (
+            db.query(Task)
+            .filter(
+                Task.status == TaskStatus.PROCESSING.value,
+                Task.created_at < task.created_at,
+                Task.id != task.id,
+            )
+            .all()
+        ):
+            max_dur = TaskRepository._max_duration_for_scene(t.scene)
+            if t.updated_at and (now - t.updated_at).total_seconds() < max_dur:
+                processing_ahead += 1
+
+        pending_ahead = (
+            db.query(Task)
+            .filter(
+                Task.status == TaskStatus.PENDING.value,
+                Task.created_at < task.created_at,
+            )
+            .count()
+        )
+        wc = max(1, settings.worker_count)
+        own = max(0, es - task.progress * es // 100)
+        return own + (processing_ahead + pending_ahead) * es // wc
+
+    @staticmethod
+    def cleanup_expired_processing() -> list[str]:
+        """标记超时的 processing 任务为 failed，返回 task_id 列表。
+
+        根据任务的 scene 判断其最大允许运行时间，超过则视为已失效。
+        防止 Worker 崩溃后任务状态永久卡在 processing。
+        """
+        now = datetime.utcnow()
+        db = SessionLocal()
+        try:
+            tasks = db.query(Task).filter(Task.status == TaskStatus.PROCESSING.value).all()
+            expired = []
+            for t in tasks:
+                max_dur = TaskRepository._max_duration_for_scene(t.scene)
+                last_active = t.updated_at or t.created_at
+                if last_active and (now - last_active).total_seconds() >= max_dur:
+                    t.status = TaskStatus.FAILED.value
+                    t.current_stage = TaskStage.FAILED.value
+                    t.error_message = "任务执行超时，已被系统自动终止"
+                    t.completed_at = now
+                    expired.append(t.id)
+            if expired:
+                db.commit()
+                logger.info("cleanup_expired_processing: marked %d tasks as failed", len(expired))
+            return expired
+        finally:
+            db.close()
+
     # ── Worker 层（独立 Session，线程安全）─────────────────
 
     @staticmethod
@@ -105,7 +177,7 @@ class TaskRepository:
                     settings.alg_expected_seconds if settings.alg_enabled else 15
                 )
                 task.remaining_time = (
-                    0 if status == "completed" else max(0, es - progress * es // 100)
+                    0 if status == "completed" else TaskRepository.estimate_queue_wait(db, task, es)
                 )
                 if status:
                     task.status = status

@@ -1,0 +1,152 @@
+version: '3.8'
+
+services:
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "9000:9000"
+    volumes:
+      - ./nginx-minio.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      api:
+        condition: service_started
+      minio:
+        condition: service_started
+
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://postgres:password@db:5432/gaussian
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      MINIO_ENDPOINT: M1_IP:9002
+      MINIO_PUBLIC_ENDPOINT: M1公网IP:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET: gaussian
+      MINIO_SECURE: "false"
+      USE_LOCAL_STORAGE: "false"
+      LOCAL_STORAGE_DIR: /app/local_storage
+      SERVICE_ACCOUNTS: dev-admin:sk-debug
+      JWT_SECRET_KEY: ...
+      ADMIN_CLIENT_ID: dev-admin
+      ALG_ENABLED: "false"
+      ALG_EXPECTED_SECONDS: 960
+      ALG_MAX_SECONDS: 3600
+      OUTPUT_TYPES: '["raw_model"]'
+      LOG_FILE: /app/logs/3dgs.log
+      WORKER_COUNT: "3"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    volumes:
+      - /data/3dgs/tasks:/app/local_storage/tasks
+      - /data/3dgs/logs:/app/logs
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: gaussian
+    ports:
+      - "5432:5432"
+    volumes:
+      - /data/pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d gaussian"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    network_mode: host
+    command: >
+      server
+      http://M1_IP:9002/data
+      http://M2_IP:9000/data
+      http://M3_IP:9000/data
+      --console-address ":9001"
+    volumes:
+      - /data:/data
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  worker:
+    build:
+      context: ..
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    network_mode: host
+    command: celery -A backend.worker.celery_app worker --loglevel=info -c 1 --pool=solo
+    environment:
+      DATABASE_URL: postgresql://postgres:password@localhost:5432/gaussian
+      CELERY_BROKER_URL: redis://localhost:6379/0
+      CELERY_RESULT_BACKEND: redis://localhost:6379/0
+      MINIO_ENDPOINT: 127.0.0.1:9002
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET: gaussian
+      MINIO_SECURE: "false"
+      MINIO_PUBLIC_ENDPOINT: M1公网IP:9000
+      USE_LOCAL_STORAGE: "false"
+      LOCAL_STORAGE_DIR: /app/local_storage
+      SERVICE_ACCOUNTS: dev-admin:sk-debug
+      JWT_SECRET_KEY: ...
+      ADMIN_CLIENT_ID: dev-admin
+      ALG_ENABLED: "true"
+      ALG_IMAGE: alg_pipeline
+      ALG_SCRIPT: alg_pipeline.pyc
+      ALG_HOST_DATA_DIR: /data/3dgs
+      ALG_OUTPUT_DIR: output
+      ALG_PLY_NAME: point_cloud.ply
+      ALG_PLY_SUBDIR: gaussian_splatting/out/train/grid_0_0/point_cloud
+      ALG_EXPECTED_SECONDS: 960
+      ALG_MAX_SECONDS: 3600
+      ALG2_IMAGE: alg_image:v1
+      ALG2_WORK_DIR: /data/dist_so
+      ALG2_SCRIPT: test.py
+      ALG2_EXTRA_ARGS: -s -m 6 --video_mode
+      ALG2_PLY_NAME: recon_result.ply
+      ALG2_EXPECTED_SECONDS: 360
+      ALG2_MAX_SECONDS: 1800
+      ALG2_SHM_SIZE: 64g
+      OUTPUT_TYPES: '["raw_model"]'
+      LOG_FILE: /app/logs/3dgs.log
+      WORKER_COUNT: "3"
+    volumes:
+      - /data/3dgs/tasks:/app/local_storage/tasks
+      - /data/3dgs/logs:/app/logs
+      - /data/3dgs:/data/3dgs
+      - /var/run/docker.sock:/var/run/docker.sock

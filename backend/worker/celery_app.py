@@ -37,6 +37,10 @@ app.conf.update(
             "task": "backend.worker.tasks.cleanup.cleanup_pending_tasks",
             "schedule": 1800.0,  # 30 分钟
         },
+        "cleanup-stale-processing": {
+            "task": "backend.worker.tasks.cleanup.cleanup_stale_processing",
+            "schedule": 300.0,  # 5 分钟
+        },
         "cleanup-completed-tasks": {
             "task": "backend.worker.tasks.cleanup.cleanup_completed_tasks",
             "schedule": 3600.0,  # 1 小时

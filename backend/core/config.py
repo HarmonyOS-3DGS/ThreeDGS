@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     default_fps: int = Field(default=5)
     default_iterations: int = Field(default=30000)
 
+    # Worker 数量（用于排队时间估算）
+    worker_count: int = Field(default=1, alias="WORKER_COUNT")
+
     # 输出类型选择
     output_types: list[str] = Field(default=["raw_model"])
 

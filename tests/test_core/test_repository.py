@@ -2,6 +2,7 @@
 
 import os
 import tempfile
+from datetime import datetime
 
 import pytest
 
@@ -117,6 +118,172 @@ class TestClientIdFiltering:
 
         tasks = repo.list_by_project("proj-1")
         assert len(tasks) == 2
+
+
+class TestEstimateQueueWait:
+    """Tests for TaskRepository.estimate_queue_wait & cleanup_expired_processing."""
+
+    @pytest.fixture(autouse=True)
+    def _clean_tasks(self, db_session):
+        db_session.query(Task).delete()
+        db_session.commit()
+
+    def test_no_tasks_ahead_returns_own_time(self, db_session):
+        task = Task(
+            project_id="proj-queue",
+            external_code="q-0",
+            scene="indoor",
+            status="processing",
+            progress=0,
+        )
+        db_session.add(task)
+        db_session.commit()
+        remaining = TaskRepository.estimate_queue_wait(db_session, task, es=100)
+        assert remaining == 100
+
+    def test_pending_ahead_adds_queue_time(self, db_session):
+        ahead = Task(
+            project_id="proj-queue",
+            external_code="q-ahead",
+            scene="indoor",
+            status="pending",
+            created_at=datetime(2020, 1, 1),
+        )
+        task = Task(
+            project_id="proj-queue",
+            external_code="q-self",
+            scene="indoor",
+            status="pending",
+            created_at=datetime(2020, 1, 2),
+        )
+        db_session.add_all([ahead, task])
+        db_session.commit()
+        remaining = TaskRepository.estimate_queue_wait(db_session, task, es=100)
+        assert remaining == 200
+
+    def test_processing_ahead_adds_queue_time(self, db_session):
+        ahead = Task(
+            project_id="proj-queue",
+            external_code="q-ahead",
+            scene="indoor",
+            status="processing",
+            created_at=datetime(2020, 1, 1),
+            updated_at=datetime.utcnow(),
+        )
+        task = Task(
+            project_id="proj-queue",
+            external_code="q-self",
+            scene="indoor",
+            status="pending",
+            created_at=datetime(2020, 1, 2),
+        )
+        db_session.add_all([ahead, task])
+        db_session.commit()
+        remaining = TaskRepository.estimate_queue_wait(db_session, task, es=100)
+        assert remaining == 200
+
+    def test_worker_count_divides_queue(self, db_session, monkeypatch):
+        monkeypatch.setattr("backend.core.config.settings.worker_count", 2)
+        ahead = Task(
+            project_id="proj-queue",
+            external_code="q-ahead",
+            scene="indoor",
+            status="pending",
+            created_at=datetime(2020, 1, 1),
+        )
+        task = Task(
+            project_id="proj-queue",
+            external_code="q-self",
+            scene="indoor",
+            status="pending",
+            created_at=datetime(2020, 1, 2),
+        )
+        db_session.add_all([ahead, task])
+        db_session.commit()
+        remaining = TaskRepository.estimate_queue_wait(db_session, task, es=100)
+        assert remaining == 150
+
+    def test_progress_reduces_own_time(self, db_session):
+        task = Task(
+            project_id="proj-queue",
+            external_code="q-progress",
+            scene="indoor",
+            status="processing",
+            progress=50,
+            created_at=datetime(2020, 1, 1),
+        )
+        db_session.add(task)
+        db_session.commit()
+        remaining = TaskRepository.estimate_queue_wait(db_session, task, es=100)
+        assert remaining == 50
+
+    def test_cross_project_counted(self, db_session):
+        other = Task(
+            project_id="other-proj",
+            external_code="other",
+            scene="indoor",
+            status="pending",
+            created_at=datetime(2020, 1, 1),
+        )
+        task = Task(
+            project_id="proj-queue",
+            external_code="q-self",
+            scene="indoor",
+            status="pending",
+            created_at=datetime(2020, 1, 2),
+        )
+        db_session.add_all([other, task])
+        db_session.commit()
+        remaining = TaskRepository.estimate_queue_wait(db_session, task, es=100)
+        assert remaining == 200
+
+    def test_stale_processing_not_counted(self, db_session):
+        stale = Task(
+            project_id="proj-queue",
+            external_code="q-stale",
+            scene="indoor",
+            status="processing",
+            created_at=datetime(2020, 1, 1),
+            updated_at=datetime(2020, 1, 1),
+        )
+        task = Task(
+            project_id="proj-queue",
+            external_code="q-self",
+            scene="indoor",
+            status="pending",
+            created_at=datetime(2020, 1, 2),
+        )
+        db_session.add_all([stale, task])
+        db_session.commit()
+        remaining = TaskRepository.estimate_queue_wait(db_session, task, es=100)
+        assert remaining == 100
+
+    def test_cleanup_expired_marks_failed(self):
+        """cleanup_expired_processing 标记超时任务为 failed。"""
+        stale = Task(
+            project_id="proj-queue",
+            external_code="q-stale",
+            scene="indoor",
+            status="processing",
+            created_at=datetime(2020, 1, 1),
+            updated_at=datetime(2020, 1, 1),
+        )
+        fresh = Task(
+            project_id="proj-queue", external_code="q-fresh", scene="indoor", status="processing"
+        )
+        db = SessionLocal()
+        try:
+            db.add_all([stale, fresh])
+            db.commit()
+            ids = TaskRepository.cleanup_expired_processing()
+            assert stale.id in ids
+            db.refresh(stale)
+            assert stale.status == "failed"
+            assert stale.error_message == "任务执行超时，已被系统自动终止"
+            db.refresh(fresh)
+            assert fresh.status == "processing"
+        finally:
+            db.close()
 
 
 def _cleanup(tf: TaskFile):

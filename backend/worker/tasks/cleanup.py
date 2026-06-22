@@ -19,6 +19,12 @@ def cleanup_pending_tasks():
 
 
 @app.task
+def cleanup_stale_processing():
+    """标记超时的 processing 任务为 failed，防止 Worker 崩溃后任务永久卡住。"""
+    TaskRepository.cleanup_expired_processing()
+
+
+@app.task
 def cleanup_completed_tasks():
     """清理长时间未下载的 completed 任务及其输出文件."""
     ids = TaskRepository.cleanup_expired_completed(settings.task_completed_ttl_days)

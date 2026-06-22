@@ -25,6 +25,7 @@ from backend.core.auth import _decode_jwt, get_admin_client_id, get_current_clie
 from backend.core.config import TASK_OUTPUT_DIR, settings
 from backend.core.database import Task, TaskFile, TaskStage, TaskStatus
 from backend.core.file_utils import detect_mime
+from backend.core.repository import TaskRepository
 from backend.core.storage import storage
 from backend.core.task_publisher import submit_pipeline
 
@@ -237,6 +238,10 @@ def _check_ownership(task: Task, client_id: str):
         raise HTTPException(status_code=404, detail={"ret": {"code": 404, "msg": "Task not found"}})
 
 
+def _estimate_remaining(task: Task, db: Session, es: int) -> int:
+    return TaskRepository.estimate_queue_wait(db, task, es)
+
+
 @router.post("/{task_id}/start", response_model=StartTaskRsp)
 def start_task(
     task_id: str,
@@ -260,13 +265,14 @@ def start_task(
     task.status = TaskStatus.PROCESSING.value
     task.current_stage = TaskStage.INITIALIZING.value
     task.progress = 0
-    task.remaining_time = (
+    es = (
         settings.alg2_expected_seconds
         if settings.alg_enabled and task.scene == "commodity"
         else settings.alg_expected_seconds
         if settings.alg_enabled
         else 15
     )
+    task.remaining_time = _estimate_remaining(task, db, es)
     db.commit()
 
     task_files = db.query(TaskFile).filter(TaskFile.task_id == task_id).all()
@@ -342,12 +348,23 @@ def query_task(
     for f in output_files:
         download_infos.append(_gen_download_url(task.id, f, project_id=projectId, token=token))
 
+    remaining = task.remaining_time
+    if task.status == TaskStatus.PROCESSING.value:
+        es = (
+            settings.alg2_expected_seconds
+            if settings.alg_enabled and task.scene == "commodity"
+            else settings.alg_expected_seconds
+            if settings.alg_enabled
+            else 15
+        )
+        remaining = _estimate_remaining(task, db, es)
+
     return GetTaskRsp(
         taskId=task.id,
         status=task.status,
         currentStage=task.current_stage,
         progress=task.progress,
-        remainingTime=task.remaining_time,
+        remainingTime=remaining,
         scene=task.scene,
         errorMessage=task.error_message or "",
         downloadInfos=download_infos,

@@ -50,15 +50,20 @@ def run_worker():
 
 def run_cleanup_scheduler():
     """本地模式下用简单线程替代 Celery Beat，定期清理过期任务。"""
-    from backend.worker.tasks.cleanup import cleanup_completed_tasks, cleanup_pending_tasks
+    from backend.worker.tasks.cleanup import (
+        cleanup_completed_tasks,
+        cleanup_pending_tasks,
+        cleanup_stale_processing,
+    )
 
     while True:
-        time.sleep(1800)  # 30 分钟
+        time.sleep(300)  # 5 分钟（对应 Beat 中最短间隔）
         try:
+            cleanup_stale_processing.run()
             cleanup_pending_tasks.run()
             cleanup_completed_tasks.run()
-        except Exception as e:
-            logger.warning("[cleanup] cleanup failed: %s", e)
+        except Exception:
+            logger.exception("[cleanup] cleanup failed")
 
 
 worker_thread = threading.Thread(target=run_worker, daemon=True)
