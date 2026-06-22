@@ -5,7 +5,6 @@ import os
 # 必须在导入任何 backend 模块前设置环境变量
 # （backend.core.database 在导入时会基于 settings 创建引擎）
 os.environ.setdefault("DATABASE_URL", "sqlite:///./test.db")
-os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 os.environ.setdefault("CELERY_BROKER_URL", "memory://")
 os.environ.setdefault("CELERY_RESULT_BACKEND", "cache+memory://")
 os.environ.setdefault("MINIO_ENDPOINT", "localhost:9000")

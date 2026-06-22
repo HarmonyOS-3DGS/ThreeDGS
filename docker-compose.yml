@@ -10,7 +10,6 @@ services:
       - "8000:8000"
     environment:
       - DATABASE_URL=postgresql://postgres:password@db:5432/gaussian
-      - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - MINIO_ENDPOINT=minio:9000
@@ -47,7 +46,6 @@ services:
     restart: unless-stopped
     environment:
       - DATABASE_URL=postgresql://postgres:password@db:5432/gaussian
-      - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - MINIO_ENDPOINT=minio:9000

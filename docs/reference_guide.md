@@ -75,32 +75,32 @@ docker-compose.yml ←──────  3dgs_engineering_guide/Ch7 (GPU 调度
 
 ## 三、后续迭代规划
 
-### Phase 1 遗留（当前 MVP 待完善）
+### Phase 1 遗留（当前 MVP 已实现）
 
-| 项目 | 说明 | 优先级 |
-|------|------|--------|
-| ✅ 任务列表接口 | GET /tasks 已实现 | 已完成 |
-| ✅ 文件下载接口 | GET /tasks/{id}/download 已实现 | 已完成 |
-| ✅ 存储抽象接口 | `StorageClient` Protocol + 本地/MinIO 双实现 | 已完成 |
-| ✅ API-Worker 解耦 | `task_publisher` 注册回调机制 | 已完成 |
-| OBS 对象存储 | 目前使用本地文件系统，需切换到 OBS（华为云对象存储） | 中 |
-| 文件类型校验 | 上传时仅前端 accept 限制，后端需校验真实 MIME 类型 | 中 |
-| `_save_file` 接入存储抽象 | 当前仍直接 `aiofiles.open` 写入本地，生产模式需改为 `storage.put_object()` | 中 |
-| Worker Repository 抽象 | `update_task` 直接操作 `SessionLocal`，建议抽象为 `TaskRepository` | 低 |
-| SSE 异步化 | `task_event_generator` 同步查询数据库，建议改用 `AsyncSession` | 低 |
+| 项目 | 状态 | 说明 |
+|------|------|------|
+| ✅ 任务列表接口 | 已完成 | GET /tasks |
+| ✅ 文件下载接口 | 已完成 | GET /tasks/{id}/download |
+| ✅ 存储抽象接口 | 已完成 | `StorageClient` Protocol + 本地/MinIO 双实现 |
+| ✅ API-Worker 解耦 | 已完成 | `task_publisher` 注册回调机制 |
+| ✅ 文件魔数校验 | 已完成 | `file_utils.py`，12 种格式头部识别 |
+| ✅ 存储抽象接入上传 | 已完成 | `tasks.py` upload 端点同时写本地 + `storage.upload_file()` 至 MinIO |
+| ✅ Worker Repository 抽象 | 已完成 | `repository.py` `TaskRepository` 静态方法，独立 Session |
+| ✅ SSE 异步化 | 已完成 | `asyncio.to_thread` + 每次新建 SessionLocal |
+| ✅ JWT Bearer Token 鉴权 | 已完成 | `auth.py` + `POST /auth/token`，OAuth2 Client Credentials |
+| ✅ 外部算法双模路由 | 已完成 | `pipeline.py` 按 scene 路由：commodity→commodity_algorithm，其他→external_algorithm |
+| ❌ OBS 对象存储 | 待实施 | 当前 MinIO 可用，生产需切换至华为云 OBS |
 
-### Phase 2 规划（参照 roadmap 的 Phase "Internal Beta"）
+### Phase 2 规划
 
-| 项目 | 参考文档 | 说明 |
-|------|---------|------|
-| 真实帧提取 | `3dgs_guide/Ch3` | 替换 `Preprocessor.extract_frames()` 为 FFmpeg CLI 调用 |
-| 真实 COLMAP | `3dgs_guide/Ch3` | 替换 `Preprocessor.run_colmap()` 为 colmap CLI + GPU 加速 |
-| 真实 3DGS 训练 | `3dgs_guide/Ch4` | 替换 `Trainer.train()` 为 gsplat / Nerfstudio |
-| 真实压缩 | `3dgs_guide/Ch5` | 替换 `Compressor.compress_*` 为 3dgsconverter / 自定义压缩 |
-| Web 3D 查看器 | `3dgs_guide/Ch6` + `Kimi_Demo/ViewerPage` | 替换 PlayCanvas iframe 为 GaussianSplats3D + Three.js |
-| JWT 鉴权 | `Kimi_Demo/auth.py` | 从 API Key 升级到 JWT Bearer Token |
-| 进度上报细化 | — | 各阶段上报真实进度（非 stub 固定值） |
-| GPU 资源调度 | `3dgs_guide/Ch7` | 多 GPU Worker 分配策略 |
+| 项目 | 参考文档 | 说明 | 优先级 |
+|------|---------|------|--------|
+| 多机分布式部署 | `todo/20260617.md` | nginx 反代 + MinIO 分布式 8 节点 + Worker 分散部署 | **高** |
+| HTTPS + ELB | `todo/20260617.md §9` | 公网 ELB 做 HTTPS 终结，M1 只对内网 HTTP | **高** |
+| Web 3D 查看器 | `3dgs_guide/Ch6` + `Kimi_Demo/ViewerPage` | 替换 PlayCanvas iframe 为 GaussianSplats3D + Three.js | 中 |
+| 进度上报真实化 | — | 外部算法模式下按算法输出实时进度（非固定值） | 中 |
+| GPU 资源调度 | `3dgs_guide/Ch7` | 多 GPU Worker 分配策略 | 低 |
+| 真实 Stub 替换（非外部算法模式用） | `3dgs_guide/Ch3-5` | 帧提取/COLMAP/训练/压缩 原生实现 | 低 |
 
 ### 远期规划（Phase 3+）
 

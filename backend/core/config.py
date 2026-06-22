@@ -15,9 +15,6 @@ class Settings(BaseSettings):
     # Database
     database_url: str = Field(default="sqlite:///./3dgs.db")
 
-    # Redis
-    redis_url: str = Field(default="redis://localhost:6379/0")
-
     # MinIO
     minio_endpoint: str = Field(default="localhost:9000")
     minio_public_endpoint: str = Field(default="")

@@ -250,6 +250,8 @@ bash run_local.sh
 3. 初始化数据库（调用 `init_db()`）
 4. 在同 Python 进程内以线程方式启动 Celery Worker + FastAPI，使 `memory://` broker 可被共享
 
+> ⚠️ `run_local.bat` 优先使用 `.venv\Scripts\python`，若 .venv 为空则需手动指定系统 Python 或用方式三手动启动。
+
 访问地址：
 - 上传页面：`http://localhost:8000/index.html`
 - 任务列表：`http://localhost:8000/status.html`
@@ -265,6 +267,8 @@ docker-compose ps
 
 编排服务：`api`、`worker`、`redis`、`db`（postgres:15-alpine）、`minio`。
 
+> ⚠️ 若 `.venv` 为空包依赖丢失，直接用系统 Python 执行方式三即可，无需重新创建虚拟环境。
+
 ### 方式三：手动分步启动
 
 ```bash
@@ -274,7 +278,7 @@ python -m venv .venv
 # Linux/Mac: source .venv/bin/activate
 
 # 2. 安装依赖（Windows 需代理）
-# $env:HTTP_PROXY="http://proxyhes-gy.security.huawei.com:8080"
+# $env:HTTP_PROXY="http://你的代理地址:端口"
 # pip install --proxy $env:HTTP_PROXY -r requirements.txt
 pip install -r requirements.txt
 
