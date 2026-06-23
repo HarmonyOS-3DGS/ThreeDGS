@@ -229,10 +229,12 @@ initializing (0%)
 
 ## 6. 任务清理策略
 
-| 条件 | 阈值 | 操作 |
-|------|------|------|
-| status=pending 且 createdAt 超时 | 24h（可配置） | 删除任务 + 文件 |
-| status=completed 且 completedAt 超时 | 7d（可配置） | 删除任务 + 文件 |
+| 条件 | 阈值 | 操作 | 执行方式 |
+|------|------|------|---------|
+| status=pending 超时未启动 | 24h（可配置） | 删除 DB 记录 | M1 Beat → Redis → 任意 Worker |
+| status=processing 超时无更新 | 按 scene 计算（5分钟检测） | 标记为 failed | M1 Beat → Redis → 任意 Worker |
+| status=completed/failed 超时 | 30d（可配置） | 删除 DB 记录 | M1 Beat → Redis → 任意 Worker |
+| 本地文件（所有状态） | 30d（可配置） | 删除本地磁盘文件，有则删无则跳过 | 每个 Worker 进程内嵌守护线程 |
 
 ---
 

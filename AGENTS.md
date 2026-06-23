@@ -135,7 +135,7 @@
 │           ├── external_algorithm.py  # 外部算法一体化（docker run + PLY 搜索）
 │           ├── commodity_algorithm.py # commodity 场景外部算法
 │           ├── finalize.py     # 输出终化（替代原 compress.py）
-│           └── cleanup.py      # 过期 pending / completed 任务清理（Celery Beat）
+│           └── cleanup.py      # DB 清理（Beat）+ 本地文件清理（Worker 内嵌线程）
 │   ├── index.html              # 上传页面（创建任务 + 启动训练）
 │   ├── status.html             # 任务列表页面（轮询刷新）
 │   ├── viewer.html             # 3D 场景查看器（SSE 进度 + 下载链接）
@@ -218,7 +218,7 @@
 | `API_HOST` | `0.0.0.0` | API 监听地址 |
 | `API_PORT` | `8000` | API 监听端口 |
 | `TASK_PENDING_TTL_HOURS` | `24` | 过期 pending 任务清理阈值（小时） |
-| `TASK_COMPLETED_TTL_DAYS` | `7` | 过期 completed 任务清理阈值（天） |
+| `TASK_COMPLETED_TTL_DAYS` | `30` | 过期 completed / failed 任务清理阈值（天） |
 | `DEFAULT_FPS` | `5` | 帧提取默认帧率 |
 | `DEFAULT_ITERATIONS` | `30000` | 3DGS 训练默认迭代次数 |
 | `ALG_ENABLED` | `false` | 是否使用外部算法一体化模式 |
@@ -454,7 +454,7 @@ curl "http://localhost:8000/tasks/{task_id}/download/{filename}?projectId=proj-0
    - `local_storage.py` / `minio_storage.py`：统一接口（`upload_file` / `download_file` / `get_presigned_url` / `delete_object` / `put_object`）
 
 3. **`backend/worker/`** —— 任务执行层
-   - `celery_app.py`：Celery 实例、`beat_schedule`（每 30 分钟清理 pending，每小时清理 completed）
+   - `celery_app.py`：Celery 实例、Beat 调度（每 5 分钟 stale_processing，30 分钟 pending，1 小时 completed/failed）、Worker 启动信号拉取本地文件清理线程
    - `tasks/*.py`：Celery 任务定义 + 流水线编排
    - `models/*.py`：Stub 实现，后续替换为真实算法
 
@@ -561,7 +561,7 @@ Celery 任务链在 `backend/worker/tasks/pipeline.py` 中通过 `celery.chain` 
 | `test_worker/test_train.py` | 训练任务执行 |
 | `test_worker/test_compress.py` | 压缩任务执行 |
 | `test_worker/test_pipeline.py` | `submit_training_pipeline` 的 `chain` mock 断言 |
-| `test_worker/test_cleanup.py` | 过期 pending / completed 任务清理逻辑（边界条件：刚好过期、未过期、非目标状态） |
+| `test_worker/test_cleanup.py` | `_cleanup_storage` 三路径（本地/MinIO/算法2）、过期 pending/completed/failed DB 清理、`_cleanup_local_files` 查询并清理 |
 
 ### 运行测试
 

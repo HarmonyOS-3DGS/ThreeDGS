@@ -7,10 +7,69 @@ from unittest.mock import patch
 
 from backend.core.database import Task, TaskStatus
 from backend.worker.tasks.cleanup import (
+    _cleanup_local_files,
     _cleanup_storage,
     cleanup_completed_tasks,
     cleanup_pending_tasks,
 )
+
+
+class TestCleanupLocalFiles:
+    def test_cleanup_expired_tasks(self, db_session):
+        old = datetime.utcnow() - timedelta(days=35)
+        fresh = datetime.utcnow() - timedelta(days=1)
+        for i, (status, updated) in enumerate(
+            [
+                (TaskStatus.PENDING, old),
+                (TaskStatus.COMPLETED, old),
+                (TaskStatus.FAILED, old),
+                (TaskStatus.PENDING, fresh),
+                (TaskStatus.COMPLETED, fresh),
+                (TaskStatus.FAILED, fresh),
+            ]
+        ):
+            db_session.add(
+                Task(
+                    id=f"local-{i}",
+                    project_id="proj-01",
+                    external_code="",
+                    scene="indoor",
+                    status=status.value,
+                    updated_at=updated,
+                )
+            )
+        db_session.commit()
+
+        called = []
+
+        def fake_storage(tid):
+            called.append(tid)
+
+        with patch("backend.worker.tasks.cleanup._cleanup_storage", side_effect=fake_storage):
+            _cleanup_local_files()
+
+        assert set(called) == {"local-0", "local-1", "local-2"}  # only old ones
+
+    def test_cleanup_skips_processing(self, db_session):
+        task = Task(
+            id="local-10",
+            project_id="proj-01",
+            external_code="",
+            scene="indoor",
+            status=TaskStatus.PROCESSING.value,
+            updated_at=datetime.utcnow() - timedelta(days=35),
+        )
+        db_session.add(task)
+        db_session.commit()
+
+        called = []
+        with patch(
+            "backend.worker.tasks.cleanup._cleanup_storage",
+            side_effect=lambda tid: called.append(tid),
+        ):
+            _cleanup_local_files()
+
+        assert "local-10" not in called  # processing 任务不会被清理
 
 
 class TestCleanupStorage:

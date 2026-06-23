@@ -1,6 +1,7 @@
 """Celery 应用配置与 Beat 定时任务调度。"""
 
 from celery import Celery
+from celery.signals import worker_process_init
 
 from backend.core.config import settings
 from backend.core.logging import LOG_CONFIG
@@ -20,6 +21,15 @@ app = Celery(
         "backend.worker.tasks.commodity_algorithm",
     ],
 )
+
+
+@worker_process_init.connect
+def _start_local_cleanup(**kwargs):
+    """每个 Worker 进程启动时，自动拉起本地文件清理守护线程。"""
+    from backend.worker.tasks.cleanup import start_local_cleanup_scheduler
+
+    start_local_cleanup_scheduler()
+
 
 app.conf.update(
     task_serializer="json",
