@@ -1,4 +1,4 @@
-# 3DGS 训练平台 — 开发者接口文档
+# 3DGS 平台 — 开发者接口文档（v1）
 
 > 本文档面向外部开发者，说明如何通过 REST API 提交和管理 3DGS 训练任务。
 
@@ -28,13 +28,13 @@
     │◄─── taskId + uploadInfos ──────┤
     │                                │
     │  PUT uploadUrl                 │  ── 上传视频文件
-    │◄────────── 200 OK ────────────┤
+    │◄─────────── 200 OK ────────────┤
     │                                │
     │  POST /tasks/{id}/start        │  ── 启动流水线
     │◄─────── remainingTime ─────────┤
     │                                │
     │  GET /tasks/{id} (轮询)        │  ── 查询状态
-    │◄──── progress/status ──────────┤
+    │◄─────── status ────────────────┤
     │                                │
     │  GET /tasks/{id}               │  ── 查询下载 URL
     │◄──── downloadInfos ────────────┤
@@ -314,14 +314,9 @@ projectId: <项目标识>
 > ```
 > GET /tasks/{taskId}/download/model.ply?projectId=<项目标识>&Authorization=Bearer%20<JWT>
 > ```
-
-
-
 ---
 
 ## 7. 完整流程示例
-
-### 7.1 curl 脚本
 
 ```bash
 #!/bin/bash
@@ -381,33 +376,11 @@ done
 
 # Step 6: 下载输出文件
 echo $STATUS_RSP | jq -r '.downloadInfos[] | .fileName + " -> " + .url'
-```
-
-### 7.2 时序图
-
-```
-开发者系统                    3DGS 平台
-    │                            │
-    │  POST /auth/token          │  ── 获取 JWT
-    │◄───────── access_token ────┤
-    │                            │
-    │  POST /tasks               │  ── 提交视频元数据
-    │◄─── taskId + uploadInfos ──┤
-    │                            │
-    │  PUT uploadUrl             │  ── 上传视频文件
-    │◄────────── 200 OK ────────┤
-    │                            │
-    │  POST /tasks/{id}/start    │  ── 启动流水线
-    │◄────── remainingTime ─────┤
-    │                            │
-    │  GET /tasks/{id} (轮询)    │  ── 查询状态
-    │◄─── status/progress ──────┤
-    │                            │
-    │  GET /tasks/{id}           │  ── 查询下载 URL
-    │◄─── downloadInfos ────────┤
-    │                            │
-    │  GET downloadUrl           │  ── 下载模型文件
-    │◄─────── 文件流 ───────────┤
+for row in $(echo $STATUS_RSP | jq -c '.downloadInfos[]'); do
+  FILE_NAME=$(echo $row | jq -r '.fileName')
+  DOWNLOAD_URL=$(echo $row | jq -r '.url')
+  curl -o "$FILE_NAME" "$DOWNLOAD_URL"
+done
 ```
 
 ---
