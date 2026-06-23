@@ -1,7 +1,7 @@
 """commodity 场景专用外部算法 — 通过 Docker SDK 执行并收集 PLY 结果。
 
 与算法 1 共用宿主根目录 /data/3dgs 和 volume 映射 -v /data/3dgs:/data。
-视频文件由 start_task 下载到 /data/3dgs/tasks/{task_id}/，容器内可见。
+视频文件由 ensure_input_video 下载到 /data/3dgs/tasks/{task_id}/，容器内可见。
 """
 
 import logging
@@ -14,7 +14,7 @@ import docker
 from backend.core.config import settings
 from backend.core.repository import TaskRepository
 from backend.worker.celery_app import app
-from backend.worker.tasks.shared import find_newest_ply
+from backend.worker.tasks.file_utils import ensure_input_video, find_newest_ply
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 @app.task(bind=True, time_limit=settings.alg2_max_seconds)
 def run_commodity_algorithm(self, task_id: str, video_path: str):
     """通过 Docker SDK 执行 commodity 算法镜像，等待退出，收集 PLY 结果。"""
+    ensure_input_video(task_id)
     host_data = settings.alg_host_data_dir
     container_data = "/data"
     container_input = f"{container_data}/tasks/{task_id}"

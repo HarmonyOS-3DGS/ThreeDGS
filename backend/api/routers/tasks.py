@@ -23,6 +23,7 @@ from backend.api.schemas.task import (
 )
 from backend.core.auth import _decode_jwt, get_admin_client_id, get_current_client_id
 from backend.core.config import TASK_OUTPUT_DIR, settings
+from backend.core.constants import SUPPORTED_VIDEO_EXTS
 from backend.core.database import Task, TaskFile, TaskStage, TaskStatus
 from backend.core.file_utils import detect_mime
 from backend.core.repository import TaskRepository
@@ -277,23 +278,15 @@ def start_task(
 
     task_files = db.query(TaskFile).filter(TaskFile.task_id == task_id).all()
     first_video = next(
-        (f for f in task_files if f.fileName.lower().endswith((".mp4", ".avi", ".mov", ".mkv"))),
+        (f for f in task_files if f.fileName.lower().endswith(SUPPORTED_VIDEO_EXTS)),
         task_files[0] if task_files else None,
     )
 
     if first_video:
         logger.info("start task=%s file=%s", task_id, first_video.fileUrl)
         remote_path = first_video.fileUrl
-        local_video = os.path.join(TASK_OUTPUT_DIR, str(task_id), os.path.basename(remote_path))
-        if not os.path.exists(local_video):
-            logger.info("start: downloading from storage %s -> %s", remote_path, local_video)
-            try:
-                storage.download_file(remote_path, local_video)
-                logger.info("start: download complete %s", task_id)
-            except Exception:
-                logger.warning("start: download failed %s", remote_path)
-        if not os.path.exists(local_video):
-            logger.error("start: file not found %s", local_video)
+        if not storage.object_exists(remote_path):
+            logger.error("start: file not found %s", remote_path)
             task.status = TaskStatus.FAILED.value
             task.error_message = "file not uploaded yet"
             db.commit()
@@ -306,6 +299,7 @@ def start_task(
                     }
                 },
             )
+        local_video = os.path.join(TASK_OUTPUT_DIR, str(task_id), os.path.basename(remote_path))
         submit_pipeline(task_id, local_video)
         logger.info("[start] task=%s pipeline submitted", task_id)
     else:

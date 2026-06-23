@@ -5,10 +5,10 @@ import shutil
 import time
 
 from backend.core.config import COMPRESSIBLE_FORMATS, settings
+from backend.core.path_utils import task_output_path
 from backend.core.repository import TaskRepository
 from backend.worker.celery_app import app
 from backend.worker.compressor import compress_model
-from backend.worker.tasks.shared import task_output_path
 
 
 def _add_output_file(task_id: str, path: str, mime: str, file_role: str = "raw_model"):

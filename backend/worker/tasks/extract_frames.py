@@ -2,15 +2,17 @@
 
 import time
 
+from backend.core.path_utils import task_output_path
 from backend.core.repository import TaskRepository
 from backend.worker.celery_app import app
 from backend.worker.models.preprocessor import Preprocessor
-from backend.worker.tasks.shared import task_output_path
+from backend.worker.tasks.file_utils import ensure_input_video
 
 
 @app.task(bind=True, max_retries=3, default_retry_delay=10)
 def extract_frames(self, task_id: str, video_path: str, fps: int = 5):
     """Stub: Simulate FFmpeg frame extraction."""
+    ensure_input_video(task_id)
     TaskRepository.update_progress(task_id, "extracting", 10)
     try:
         self.update_state(

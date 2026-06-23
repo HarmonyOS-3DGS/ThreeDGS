@@ -8,9 +8,10 @@ import time
 import docker
 
 from backend.core.config import settings
+from backend.core.path_utils import task_output_path
 from backend.core.repository import TaskRepository
 from backend.worker.celery_app import app
-from backend.worker.tasks.shared import find_newest_ply, task_output_path
+from backend.worker.tasks.file_utils import ensure_input_video, find_newest_ply
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,7 @@ logger = logging.getLogger(__name__)
 @app.task(bind=True, time_limit=settings.alg_max_seconds)
 def run_external_algorithm(self, task_id: str, video_path: str):
     """通过 Docker SDK 执行外部算法镜像，等待退出，收集 PLY 结果。"""
+    ensure_input_video(task_id)
     host_data = settings.alg_host_data_dir
     container_data = "/data"
     container_input = f"{container_data}/tasks/{task_id}"

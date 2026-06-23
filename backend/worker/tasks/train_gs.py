@@ -2,10 +2,10 @@
 
 import time
 
+from backend.core.path_utils import task_output_path
 from backend.core.repository import TaskRepository
 from backend.worker.celery_app import app
 from backend.worker.models.trainer import Trainer
-from backend.worker.tasks.shared import task_output_path
 
 
 @app.task(bind=True, time_limit=3600)

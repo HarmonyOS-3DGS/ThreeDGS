@@ -111,6 +111,8 @@
 │   │   ├── storage.py          # 存储工厂（USE_LOCAL_STORAGE 控制 MinIO / 本地切换）
 │   │   ├── local_storage.py    # 本地文件系统存储实现（LocalStorageClient）
 │   │   ├── minio_storage.py    # MinIO 对象存储封装（MinioStorageClient）
+│   │   ├── constants.py        # 共享常量（SUPPORTED_VIDEO_EXTS）
+│   │   ├── path_utils.py       # 路径工具（task_output_path）
 │   │   └── models/             # ORM 模型（从 database.py 拆分）
 │   │       ├── __init__.py
 │   │       ├── task.py         # Task 模型 + TaskStatus / TaskStage 枚举
@@ -126,15 +128,14 @@
 │       └── tasks/              # 四阶段流水线 + 定时清理
 │           ├── __init__.py
 │           ├── pipeline.py     # 任务链编排（celery.chain）
-│           ├── shared.py       # 公共函数（task_output_path）
+│           ├── file_utils.py   # 视频下载（ensure_input_video）、PLY 搜索（find_newest_ply）
 │           ├── extract_frames.py
 │           ├── colmap_sfm.py
 │           ├── train_gs.py
-│           ├── compress.py
 │           ├── external_algorithm.py  # 外部算法一体化（docker run + PLY 搜索）
 │           ├── commodity_algorithm.py # commodity 场景外部算法
+│           ├── finalize.py     # 输出终化（替代原 compress.py）
 │           └── cleanup.py      # 过期 pending / completed 任务清理（Celery Beat）
-├── frontend/                   # 静态前端（原生 HTML/JS/CSS，无构建工具）
 │   ├── index.html              # 上传页面（创建任务 + 启动训练）
 │   ├── status.html             # 任务列表页面（轮询刷新）
 │   ├── viewer.html             # 3D 场景查看器（SSE 进度 + 下载链接）
@@ -157,9 +158,13 @@
 │       ├── test_extract_frames.py
 │       ├── test_colmap.py
 │       ├── test_train.py
-│       ├── test_compress.py
-│       ├── test_pipeline.py    # 任务链编排 mock 测试
-│       └── test_cleanup.py     # 过期任务清理逻辑测试
+│       ├── test_commodity_algorithm.py # commodity 算法 Docker SDK 执行、PLY 搜索、故障处理
+│       ├── test_external_algorithm.py  # 外部算法 Docker SDK 执行
+│       ├── test_compressor_module.py   # 压缩模块独立测试
+│       ├── test_file_utils.py    # ensure_input_video + find_newest_ply
+│       ├── test_finalize.py     # output 终化任务测试
+│       ├── test_pipeline.py     # 任务链编排 mock 测试
+│       ├── test_cleanup.py      # 过期任务清理逻辑测试
 ├── scripts/                    # 集成测试脚本
 │   ├── real_test.py            # 线程内启动 API + Worker 的真实 HTTP 测试（推荐）
 │   └── integration_test.py     # 子进程启动 API + Worker 的集成测试（字段名较旧，可能需更新）
@@ -262,6 +267,17 @@ bash run_local.sh
 - 任务列表：`http://localhost:8000/status.html`
 - 查看器：`http://localhost:8000/viewer.html?id={task_id}&projectId={project_id}`
 - API 文档：`http://localhost:8000/docs`
+
+**后台启动（不阻塞终端）：**
+```powershell
+# Windows（在 ThreeDGS 目录下执行）
+Start-Process -NoNewWindow -FilePath "C:\Users\f00855399\AppData\Local\Programs\Python\Python311\python.exe" -ArgumentList "run_local.py"
+
+# 停止后台进程
+Get-Process | Where-Object {$_.ProcessName -eq "python" -and $_.CommandLine -match "run_local"} | Stop-Process -Force
+```
+
+> ⚠️ 如果 `python` 指向 `.venv` 且 venv 为空，需用系统 Python 的完整路径启动。确认方式：`Get-Command python | Select-Object Source` 查看当前 `python` 指向哪个路径。
 
 ### 方式二：Docker Compose（生产模式）
 
@@ -574,6 +590,10 @@ python scripts/integration_test.py
 
 ## 代码风格与开发规范
 
+0. **先读代码，再写代码**：
+    - 任何操作（查询、修改、调试）前，必须先确认源码中的定义：import 路径、class/function 签名、字段类型、约束条件
+    - 不依赖对代码结构的假设或记忆，一切都是从源码读到的才是对的
+    - 特别是跨容器操作（如 `docker exec` 跑 Python）时，确认模块导入路径和依赖是否存在
 0. **Git 提交规则**：
    - Author 和 Committer **必须且仅能为** `fryandev <268098688+fryandev@users.noreply.github.com>`。禁止使用任何其他姓名或邮箱，禁止出现真实身份信息。
     - **禁止自动提交代码**。只在用户明确要求提交时才提交。提交 message 需基于代码最终 diff 内容概括，而非对话过程。未经用户确认不得执行 commit。

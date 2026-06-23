@@ -12,8 +12,9 @@ class TestExternalAlgorithmTask:
             mock_docker.return_value.containers.run.return_value = mock_container
             with patch("backend.worker.tasks.external_algorithm.find_newest_ply") as mock_find:
                 mock_find.return_value = "/tmp/test.ply"
-                with patch(
-                    "backend.worker.tasks.external_algorithm.TaskRepository.update_progress"
+                with (
+                    patch("backend.worker.tasks.external_algorithm.TaskRepository.update_progress"),
+                    patch("backend.worker.tasks.external_algorithm.ensure_input_video"),
                 ):
                     from backend.worker.tasks.external_algorithm import run_external_algorithm
 
@@ -27,9 +28,12 @@ class TestExternalAlgorithmTask:
     def test_docker_failure(self):
         with patch("backend.worker.tasks.external_algorithm.docker.from_env") as mock_docker:
             mock_docker.return_value.containers.run.side_effect = Exception("crash")
-            with patch(
-                "backend.worker.tasks.external_algorithm.TaskRepository.update_progress"
-            ) as mock_up:
+            with (
+                patch(
+                    "backend.worker.tasks.external_algorithm.TaskRepository.update_progress"
+                ) as mock_up,
+                patch("backend.worker.tasks.external_algorithm.ensure_input_video"),
+            ):
                 from backend.worker.tasks.external_algorithm import run_external_algorithm
 
                 result = run_external_algorithm.run("test-id", "/tmp/test.mp4")
@@ -46,8 +50,9 @@ class TestExternalAlgorithmTask:
             mock_docker.return_value.containers.run.return_value = mock_container
             with patch("backend.worker.tasks.external_algorithm.find_newest_ply") as mock_find:
                 mock_find.return_value = None
-                with patch(
-                    "backend.worker.tasks.external_algorithm.TaskRepository.update_progress"
+                with (
+                    patch("backend.worker.tasks.external_algorithm.TaskRepository.update_progress"),
+                    patch("backend.worker.tasks.external_algorithm.ensure_input_video"),
                 ):
                     from backend.worker.tasks.external_algorithm import run_external_algorithm
 
