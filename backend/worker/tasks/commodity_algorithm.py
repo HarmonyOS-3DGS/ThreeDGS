@@ -174,7 +174,10 @@ def run_commodity_algorithm(self, task_id: str, video_path: str):
     try:
         outputs = run_finalize(task_id, ply_path)
         TaskRepository.update_progress(
-            task_id, "completed", 100, status="completed",
+            task_id,
+            "completed",
+            100,
+            status="completed",
             expected_seconds=settings.alg2_expected_seconds,
         )
         logger.info("alg2 done task=%s outputs=%s", task_id, outputs)

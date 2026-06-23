@@ -147,7 +147,8 @@ class TestRunFinalize:
                     settings.output_types = ["raw_model"]
                     run_finalize("test-id", "/tmp/model.ply")
                     status_calls = [
-                        c for c in mock_repo.update_progress.call_args_list
+                        c
+                        for c in mock_repo.update_progress.call_args_list
                         if c[1].get("status") in ("completed", "failed")
                     ]
                     assert len(status_calls) == 0

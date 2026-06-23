@@ -106,6 +106,26 @@ services:
       start_period: 30s
       retries: 5
 
+  beat:
+    build:
+      context: ..
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    command: celery -A backend.worker.celery_app beat --loglevel=info --pidfile=/tmp/celerybeat.pid
+    environment:
+      DATABASE_URL: postgresql://postgres:password@db:5432/gaussian
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      USE_LOCAL_STORAGE: "false"
+      LOG_FILE: /app/logs/3dgs.log
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - /data/3dgs/logs:/app/logs
+
   worker:
     build:
       context: ..

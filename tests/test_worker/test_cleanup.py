@@ -1,9 +1,70 @@
 """Tests for cleanup tasks."""
 
+import os
+import tempfile
 from datetime import datetime, timedelta
+from unittest.mock import patch
 
 from backend.core.database import Task, TaskStatus
-from backend.worker.tasks.cleanup import cleanup_completed_tasks, cleanup_pending_tasks
+from backend.worker.tasks.cleanup import (
+    _cleanup_storage,
+    cleanup_completed_tasks,
+    cleanup_pending_tasks,
+)
+
+
+class TestCleanupStorage:
+    def test_cleanup_local_task_dir(self):
+        with tempfile.TemporaryDirectory() as td:
+            task_dir = os.path.join(td, "test-101")
+            os.makedirs(task_dir)
+            open(os.path.join(task_dir, "video.mp4"), "w").close()
+
+            with patch("backend.worker.tasks.cleanup.TASK_OUTPUT_DIR", td):
+                with patch("backend.worker.tasks.cleanup.storage.list_objects", return_value=[]):
+                    _cleanup_storage("test-101")
+
+            assert not os.path.exists(task_dir)
+
+    def test_cleanup_alg2_dir(self):
+        with tempfile.TemporaryDirectory() as td:
+            alg2_dir = os.path.join(td, "dist_so", "UserData", "test_task_id_tasks_test-102")
+            os.makedirs(alg2_dir)
+            open(os.path.join(alg2_dir, "recon_result.ply"), "w").close()
+
+            with patch("backend.worker.tasks.cleanup.storage.list_objects", return_value=[]):
+                with patch("backend.worker.tasks.cleanup.settings.alg_host_data_dir", td):
+                    _cleanup_storage("test-102")
+
+            assert not os.path.exists(alg2_dir)
+
+    def test_cleanup_minio_objects(self):
+        with tempfile.TemporaryDirectory() as td:
+            task_dir = os.path.join(td, "tasks", "test-103")
+            os.makedirs(task_dir)
+
+            mock_objects = ["tasks/test-103/video.mp4", "tasks/test-103/output/model.ply"]
+            deleted = []
+
+            def fake_delete(obj):
+                deleted.append(obj)
+
+            with patch("backend.worker.tasks.cleanup.TASK_OUTPUT_DIR", td):
+                with patch(
+                    "backend.worker.tasks.cleanup.storage.list_objects", return_value=mock_objects
+                ):
+                    with patch(
+                        "backend.worker.tasks.cleanup.storage.delete_object",
+                        side_effect=fake_delete,
+                    ):
+                        _cleanup_storage("test-103")
+
+            assert set(deleted) == set(mock_objects)
+
+    def test_cleanup_skip_nonexistent(self):
+        with patch("backend.worker.tasks.cleanup.storage.list_objects", return_value=[]):
+            with patch("backend.worker.tasks.cleanup.TASK_OUTPUT_DIR", "/nonexistent"):
+                _cleanup_storage("test-999")  # should not crash
 
 
 class TestCleanupPending:
@@ -68,7 +129,7 @@ class TestCleanupCompleted:
             external_code="OLD-DONE",
             scene="indoor",
             status=TaskStatus.COMPLETED.value,
-            completed_at=datetime.utcnow() - timedelta(days=8),
+            updated_at=datetime.utcnow() - timedelta(days=8),
         )
         db_session.add(task)
         db_session.commit()
@@ -85,7 +146,6 @@ class TestCleanupCompleted:
             external_code="FRESH-DONE",
             scene="indoor",
             status=TaskStatus.COMPLETED.value,
-            completed_at=datetime.utcnow() - timedelta(days=1),
         )
         db_session.add(task)
         db_session.commit()
@@ -95,14 +155,14 @@ class TestCleanupCompleted:
         remaining = db_session.query(Task).filter(Task.id == "test-cleanup-005").first()
         assert remaining is not None
 
-    def test_skip_none_completed(self, db_session):
+    def test_cleanup_expired_failed(self, db_session):
         task = Task(
             id="test-cleanup-006",
             project_id="proj-01",
-            external_code="FAILED",
+            external_code="OLD-FAILED",
             scene="indoor",
             status=TaskStatus.FAILED.value,
-            completed_at=datetime.utcnow() - timedelta(days=8),
+            updated_at=datetime.utcnow() - timedelta(days=8),
         )
         db_session.add(task)
         db_session.commit()
@@ -110,4 +170,20 @@ class TestCleanupCompleted:
         cleanup_completed_tasks.run()
 
         remaining = db_session.query(Task).filter(Task.id == "test-cleanup-006").first()
+        assert remaining is None
+
+    def test_keep_fresh_failed(self, db_session):
+        task = Task(
+            id="test-cleanup-007",
+            project_id="proj-01",
+            external_code="FRESH-FAILED",
+            scene="indoor",
+            status=TaskStatus.FAILED.value,
+        )
+        db_session.add(task)
+        db_session.commit()
+
+        cleanup_completed_tasks.run()
+
+        remaining = db_session.query(Task).filter(Task.id == "test-cleanup-007").first()
         assert remaining is not None

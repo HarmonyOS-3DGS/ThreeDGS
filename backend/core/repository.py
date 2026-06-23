@@ -251,15 +251,15 @@ class TaskRepository:
 
     @staticmethod
     def cleanup_expired_completed(days: int) -> list[str]:
-        """删除过期 completed 任务（DB + TaskFile 在同一事务中），返回已删除的 task_id 列表供磁盘清理。"""
+        """删除过期 completed / failed 任务（DB + TaskFile 在同一事务中），返回已删除的 task_id 列表供磁盘清理。"""
         cutoff = datetime.utcnow() - timedelta(days=days)
         db = SessionLocal()
         try:
             tasks = (
                 db.query(Task)
                 .filter(
-                    Task.status == TaskStatus.COMPLETED.value,
-                    Task.completed_at < cutoff,
+                    Task.status.in_([TaskStatus.COMPLETED.value, TaskStatus.FAILED.value]),
+                    Task.updated_at < cutoff,
                 )
                 .all()
             )

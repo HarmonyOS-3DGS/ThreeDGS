@@ -29,7 +29,9 @@ def _add_output_file(task_id: str, path: str, mime: str, file_role: str = "raw_m
         file_url = object_name
     except Exception:
         file_url = path
-    result = TaskRepository.add_output_file(task_id, path, mime, storage_url=file_url, file_role=file_role)
+    result = TaskRepository.add_output_file(
+        task_id, path, mime, storage_url=file_url, file_role=file_role
+    )
     if result is None:
         logger.warning("add_output_file failed for task=%s path=%s", task_id, path)
 
