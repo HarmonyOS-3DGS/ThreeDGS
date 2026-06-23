@@ -93,8 +93,8 @@
 │   │   ├── deps.py             # 依赖注入（DB session 封装）
 │   │   ├── routers/
 │   │   │   ├── __init__.py
-│   │   │   ├── tasks.py        # POST /tasks, GET /tasks, POST /tasks/{id}/start, GET /tasks/{id}, GET /tasks/{id}/download
-│   │   │   └── sse.py          # GET /tasks/{id}/events（SSE 实时进度）
+│   │   │   ├── tasks.py        # 创建/列表/启动/查询/上传/下载任务
+│   │   │   └── sse.py          # GET /tasks/{id}/events（SSE 实时进度，内部调试）
 │   │   └── schemas/
 │   │       ├── __init__.py
 │   │       └── task.py         # CreateTaskReq / CreateTaskRsp / StartTaskRsp / GetTaskRsp / TaskListResponse / TaskStatusEvent / FileInfo / UrlInfo

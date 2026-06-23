@@ -103,8 +103,9 @@ python run_local.py
 ├── backend/
 │   ├── api/                    # FastAPI 路由和 Schema
 │   │   ├── routers/
-│   │   │   ├── tasks.py        # POST /tasks, POST /{id}/start, GET /{id}
-│   │   │   └── sse.py          # SSE 实时进度
+│   │   │   ├── tasks.py        # 创建/列表/启动/查询/上传/下载任务
+│   │   │   ├── sse.py          # SSE 实时进度（内部调试）
+│   │   │   └── auth.py         # POST /auth/token 鉴权
 │   │   └── schemas/
 │   │       └── task.py         # Task 相关 Pydantic 模型
 │   ├── worker/                 # Celery 任务和模型 Stub
