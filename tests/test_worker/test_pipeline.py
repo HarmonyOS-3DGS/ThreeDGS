@@ -58,7 +58,7 @@ class TestPipeline:
             settings.output_types = ["raw_model"]
             submit_training_pipeline("task-1", "/tmp/vid.mp4")
             args, _ = mock_chain.call_args
-            assert len(args) == 2
+            assert len(args) == 1  # 只有算法任务，finalize 已内联
 
     def test_no_output_skips_finalize(self):
         with (
@@ -77,7 +77,7 @@ class TestPipeline:
             assert len(args) == 3
 
     def test_commodity_routing(self):
-        """commodity 场景 → chain 含 run_commodity_algorithm。"""
+        """commodity 场景 → chain 含 run_commodity_algorithm（无 finalize_outputs）。"""
         with (
             patch("backend.worker.tasks.pipeline.chain") as mock_chain,
             patch("backend.core.database.SessionLocal") as mock_db,
@@ -91,12 +91,12 @@ class TestPipeline:
             settings.output_types = ["raw_model"]
             submit_training_pipeline("task-1", "/tmp/vid.mp4")
             args, _ = mock_chain.call_args
-            assert len(args) == 2
+            assert len(args) == 1  # 只有算法任务
             task_name = args[0].name
             assert "commodity_algorithm" in task_name
 
     def test_indoor_routing(self):
-        """indoor 场景 → chain 含 run_external_algorithm。"""
+        """indoor 场景 → chain 含 run_external_algorithm（无 finalize_outputs）。"""
         with (
             patch("backend.worker.tasks.pipeline.chain") as mock_chain,
             patch("backend.core.database.SessionLocal") as mock_db,
@@ -110,6 +110,6 @@ class TestPipeline:
             settings.output_types = ["raw_model"]
             submit_training_pipeline("task-1", "/tmp/vid.mp4")
             args, _ = mock_chain.call_args
-            assert len(args) == 2
+            assert len(args) == 1  # 只有算法任务
             task_name = args[0].name
             assert "external_algorithm" in task_name

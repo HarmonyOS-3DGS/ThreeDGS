@@ -1,5 +1,11 @@
-"""通用输出处理器 — 替代原 compress.py 的 compress_result 任务。"""
+"""通用输出处理器 — 替代原 compress.py 的 compress_result 任务。
 
+提供两个入口：
+  1. run_finalize(task_id, ply_path) — 纯函数（不做状态更新），算法任务直接调用
+  2. finalize_outputs(prev_result) — Celery 任务，仅 stub 链使用
+"""
+
+import logging
 import os
 import shutil
 import time
@@ -10,9 +16,11 @@ from backend.core.repository import TaskRepository
 from backend.worker.celery_app import app
 from backend.worker.compressor import compress_model
 
+logger = logging.getLogger(__name__)
+
 
 def _add_output_file(task_id: str, path: str, mime: str, file_role: str = "raw_model"):
-    """上传到对象存储并写 DB。"""
+    """上传到对象存储并写 DB，失败时打 warning 不阻断流程。"""
     object_name = f"tasks/{task_id}/output/{os.path.basename(path)}"
     try:
         from backend.core.storage import storage
@@ -21,17 +29,25 @@ def _add_output_file(task_id: str, path: str, mime: str, file_role: str = "raw_m
         file_url = object_name
     except Exception:
         file_url = path
-    TaskRepository.add_output_file(task_id, path, mime, storage_url=file_url, file_role=file_role)
+    result = TaskRepository.add_output_file(task_id, path, mime, storage_url=file_url, file_role=file_role)
+    if result is None:
+        logger.warning("add_output_file failed for task=%s path=%s", task_id, path)
 
 
-@app.task(bind=True, time_limit=600)
-def finalize_outputs(self, prev_result: dict):
-    """根据 output_types 配置输出最终文件：raw_model 直接复制，spz/sog 压缩后存入。"""
-    task_id = prev_result["task_id"]
-    ply_path = prev_result.get("model_path")
-    if not ply_path:
-        raise ValueError("prev_result missing model_path")
+def run_finalize(task_id: str, ply_path: str) -> dict[str, str]:
+    """核心终化逻辑：复制/压缩模型、上传到存储、写 DB。
 
+    算法任务在找到 PLY 后直接调用此函数，确保终化与算法在同一进程执行。
+
+    **不做状态更新** — 调用方（算法任务 / finalize_outputs）负责
+    在调用成功后设置 ``status="completed"``。
+
+    Returns:
+        dict of {output_type: local_path}
+
+    Raises:
+        任意 IO / DB 异常，由调用方处理
+    """
     output_dir = task_output_path(task_id, "output")
     os.makedirs(output_dir, exist_ok=True)
 
@@ -54,17 +70,28 @@ def finalize_outputs(self, prev_result: dict):
             )
             outputs[_fmt] = path
 
-    try:
-        self.update_state(
-            state="PROGRESS",
-            meta={"current": 95, "total": 100, "stage": "compressing"},
-        )
-    except Exception:
-        pass
+    return outputs
 
-    TaskRepository.update_progress(task_id, "compressing", 95)
-    time.sleep(1)
-    TaskRepository.update_progress(task_id, "completed", 100, status="completed")
+
+@app.task(bind=True, time_limit=600)
+def finalize_outputs(self, prev_result: dict):
+    """Celery 任务：stub 链终化。委托给 run_finalize() 后更新进度。"""
+    task_id = prev_result["task_id"]
+    ply_path = prev_result.get("model_path")
+    if not ply_path:
+        TaskRepository.update_progress(
+            task_id, "failed", 0, status="failed", error="prev_result missing model_path"
+        )
+        raise ValueError("prev_result missing model_path")
+
+    try:
+        outputs = run_finalize(task_id, ply_path)
+        TaskRepository.update_progress(task_id, "compressing", 95)
+        time.sleep(1)
+        TaskRepository.update_progress(task_id, "completed", 100, status="completed")
+    except Exception as e:
+        TaskRepository.update_progress(task_id, "failed", 0, status="failed", error=str(e))
+        raise
 
     try:
         self.update_state(

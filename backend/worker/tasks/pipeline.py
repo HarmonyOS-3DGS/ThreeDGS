@@ -27,8 +27,6 @@ def submit_training_pipeline(task_id: str, video_path: str):
     finally:
         db.close()
 
-    has_output = bool(settings.output_types)
-
     if settings.alg_enabled:
         if scene == "commodity":
             from backend.worker.tasks.commodity_algorithm import run_commodity_algorithm
@@ -47,15 +45,15 @@ def submit_training_pipeline(task_id: str, video_path: str):
                 scene,
             )
     else:
+        has_output = bool(settings.output_types)
         steps = [
             extract_frames.s(task_id, video_path, fps=settings.default_fps),
             run_colmap.s(),
             train_gaussian_splatting.s(iterations=settings.default_iterations),
         ]
         logger.info("pipeline routing: task=%s scene=%s -> stub chain", task_id, scene)
-
-    if has_output:
-        steps.append(finalize_outputs.s())
+        if has_output:
+            steps.append(finalize_outputs.s())
 
     pipeline = chain(*steps)
     return pipeline.apply_async()

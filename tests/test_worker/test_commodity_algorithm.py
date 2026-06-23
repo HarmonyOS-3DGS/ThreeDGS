@@ -10,6 +10,10 @@ class TestCommodityAlgorithmTask:
             patch("backend.worker.tasks.commodity_algorithm.find_newest_ply") as mock_find,
             patch("backend.worker.tasks.commodity_algorithm.TaskRepository.update_progress"),
             patch("backend.worker.tasks.commodity_algorithm.ensure_input_video"),
+            patch(
+                "backend.worker.tasks.commodity_algorithm.run_finalize",
+                return_value={"raw_model": "/tmp/model.ply"},
+            ),
         ):
             mock_container = MagicMock()
             mock_container.wait.return_value = {"StatusCode": 0}
@@ -21,7 +25,8 @@ class TestCommodityAlgorithmTask:
 
             result = run_commodity_algorithm.run("test-id", "/tmp/test.mp4")
             assert result["task_id"] == "test-id"
-            assert result["model_path"] == "/tmp/test.ply"
+            assert "outputs" in result
+            assert result["outputs"]["raw_model"] == "/tmp/model.ply"
             mock_container.wait.assert_called_once()
             mock_container.remove.assert_called_once()
             mock_container.logs.assert_called_once_with(stream=True, follow=True)
@@ -36,6 +41,25 @@ class TestCommodityAlgorithmTask:
         ):
             mock_docker.return_value.containers.run.side_effect = Exception("crash")
 
+            from backend.worker.tasks.commodity_algorithm import run_commodity_algorithm
+
+            result = run_commodity_algorithm.run("test-id", "/tmp/test.mp4")
+            assert "error" in result
+            calls = mock_up.call_args_list
+            failed_call = [c for c in calls if c[1].get("status") == "failed"]
+            assert len(failed_call) == 1
+
+    def test_ensure_input_video_failure(self):
+        with (
+            patch("backend.worker.tasks.commodity_algorithm.docker.from_env"),
+            patch(
+                "backend.worker.tasks.commodity_algorithm.TaskRepository.update_progress"
+            ) as mock_up,
+            patch(
+                "backend.worker.tasks.commodity_algorithm.ensure_input_video",
+                side_effect=FileNotFoundError("file not found"),
+            ),
+        ):
             from backend.worker.tasks.commodity_algorithm import run_commodity_algorithm
 
             result = run_commodity_algorithm.run("test-id", "/tmp/test.mp4")

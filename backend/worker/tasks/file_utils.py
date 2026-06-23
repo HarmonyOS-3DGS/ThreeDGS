@@ -42,6 +42,8 @@ def ensure_input_video(task_id: str) -> str:
         )
         if not task_file:
             task_file = db.query(TaskFile).filter(TaskFile.task_id == task_id).first()
+            if task_file:
+                logger.info("fallback to file: %s (role=%s)", task_file.fileName, task_file.fileRole)
         if not task_file:
             raise FileNotFoundError(f"task {task_id}: no files in DB")
     finally:
