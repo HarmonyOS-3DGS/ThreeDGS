@@ -19,9 +19,11 @@ import logging
 import os
 from datetime import datetime, timedelta
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from backend.core.config import settings
+from backend.core.constants import STUB_EXPECTED_SECONDS
 from backend.core.database import SessionLocal, Task, TaskFile, TaskStage, TaskStatus
 
 logger = logging.getLogger(__name__)
@@ -86,6 +88,15 @@ class TaskRepository:
     # ── 排队估算（API / Worker 共用）─────────────────────
 
     @staticmethod
+    def _expected_duration_for_scene(scene: str) -> int:
+        """根据场景获取任务的预估执行秒数。"""
+        if settings.alg_enabled:
+            if scene == "commodity":
+                return settings.alg2_expected_seconds
+            return settings.alg_expected_seconds
+        return STUB_EXPECTED_SECONDS
+
+    @staticmethod
     def _max_duration_for_scene(scene: str) -> int:
         """根据场景获取任务的最大超时秒数。"""
         if scene == "commodity":
@@ -93,39 +104,51 @@ class TaskRepository:
         return settings.alg_max_seconds if settings.alg_enabled else 3600
 
     @staticmethod
-    def estimate_queue_wait(db: Session, task: Task, es: int) -> int:
-        """估算包含排队时间的剩余秒数。
+    def estimate_queue_wait(db: Session, task: Task, es: int, include_queue: bool = True) -> int:
+        """估算包含排队时间的剩余秒数（水管模型）。
 
-        考虑当前正在运行且未超时的 processing 任务，
-        以及排在当前任务之前的 pending 任务。
-        超过最大时长的 processing 任务不计入排队（已失效）。
+        每个 Worker 是一根水管，ahead 任务按开始时间依次分配到最先空出的水管上。
+        新任务的排队时间 = 所有水管中最短的总长度（最早空出的水管）。
+
+        Args:
+            include_queue: 为 False 时仅返回自身剩余时间（执行中不再排队）。
         """
         now = datetime.utcnow()
-        processing_ahead = 0
+        ahead_r = []
         for t in (
             db.query(Task)
             .filter(
                 Task.status == TaskStatus.PROCESSING.value,
-                Task.created_at < task.created_at,
+                func.coalesce(Task.processing_started_at, Task.created_at)
+                < func.coalesce(task.processing_started_at, task.created_at),
                 Task.id != task.id,
             )
             .all()
         ):
             max_dur = TaskRepository._max_duration_for_scene(t.scene)
             if t.updated_at and (now - t.updated_at).total_seconds() < max_dur:
-                processing_ahead += 1
+                es_t = TaskRepository._expected_duration_for_scene(t.scene)
+                elapsed = (now - (t.processing_started_at or t.updated_at)).total_seconds()
+                ahead_r.append(max(0, es_t - elapsed))
 
-        pending_ahead = (
-            db.query(Task)
-            .filter(
-                Task.status == TaskStatus.PENDING.value,
-                Task.created_at < task.created_at,
-            )
-            .count()
-        )
         wc = max(1, settings.worker_count)
-        own = max(0, es - task.progress * es // 100)
-        return own + (processing_ahead + pending_ahead) * es // wc
+        own = max(0, es - (now - (task.processing_started_at or task.updated_at)).total_seconds())
+
+        if not include_queue:
+            return int(own)
+
+        # 水管模型：依次分配到最早空出的水管
+        pipes = [0.0] * wc
+        for r in ahead_r:
+            idx = pipes.index(min(pipes))
+            pipes[idx] += r
+
+        queue = int(min(pipes))
+        logger.info(
+            "task=%s es=%d ahead=%d wc=%d own=%d queue=%d remaining=%d",
+            task.id, es, len(ahead_r), wc, int(own), queue, int(own) + queue,
+        )
+        return int(own) + queue
 
     @staticmethod
     def cleanup_expired_processing() -> list[str]:
@@ -166,33 +189,50 @@ class TaskRepository:
         error: str | None = None,
         expected_seconds: int | None = None,
     ) -> None:
-        """更新任务进度。remaining_time 按预期时长线性递减估算。"""
+        """更新任务进度。remaining_time 按水管模型估算，progress 兼顾显式传入值和时间比。"""
         db = SessionLocal()
         try:
             task = db.query(Task).filter(Task.id == task_id).first()
-            if task:
-                task.current_stage = stage
+            if not task:
+                return
+
+            task.current_stage = stage
+            es = (
+                expected_seconds
+                if expected_seconds is not None
+                else TaskRepository._expected_duration_for_scene(task.scene)
+            )
+            task.remaining_time = (
+                0
+                if status == "completed"
+                else TaskRepository.estimate_queue_wait(db, task, es, include_queue=False)
+            )
+
+            if status == "completed":
+                task.progress = 100
+            elif status == "failed":
                 task.progress = progress
-                es = expected_seconds or (
-                    settings.alg_expected_seconds if settings.alg_enabled else 15
-                )
-                task.remaining_time = (
-                    0 if status == "completed" else TaskRepository.estimate_queue_wait(db, task, es)
-                )
-                if status:
-                    task.status = status
-                if error:
-                    task.error_message = error
-                if status == "completed":
-                    task.completed_at = datetime.utcnow()
-                db.commit()
-                logger.info(
-                    "task=%s stage=%s progress=%d status=%s",
-                    task_id,
-                    stage,
-                    progress,
-                    task.status,
-                )
+            elif task.processing_started_at and task.remaining_time > 0:
+                elapsed = (datetime.utcnow() - task.processing_started_at).total_seconds()
+                adjusted = min(99, int(100 * elapsed / (elapsed + task.remaining_time)))
+                task.progress = max(task.progress, progress, adjusted)
+            else:
+                task.progress = max(task.progress, progress)
+
+            if status:
+                task.status = status
+            if error:
+                task.error_message = error
+            if status == "completed":
+                task.completed_at = datetime.utcnow()
+            db.commit()
+            logger.info(
+                "task=%s stage=%s progress=%d remaining=%d",
+                task_id,
+                stage,
+                task.progress,
+                task.remaining_time,
+            )
         finally:
             db.close()
 

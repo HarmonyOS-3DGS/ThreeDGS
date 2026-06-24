@@ -2,6 +2,7 @@
 
 import logging
 import os
+from datetime import datetime
 from urllib.parse import urlencode
 
 import aiofiles
@@ -23,7 +24,7 @@ from backend.api.schemas.task import (
 )
 from backend.core.auth import _decode_jwt, get_admin_client_id, get_current_client_id
 from backend.core.config import TASK_OUTPUT_DIR, settings
-from backend.core.constants import SUPPORTED_VIDEO_EXTS
+from backend.core.constants import STUB_EXPECTED_SECONDS, SUPPORTED_VIDEO_EXTS
 from backend.core.database import Task, TaskFile, TaskStage, TaskStatus
 from backend.core.file_utils import detect_mime
 from backend.core.repository import TaskRepository
@@ -239,10 +240,6 @@ def _check_ownership(task: Task, client_id: str):
         raise HTTPException(status_code=404, detail={"ret": {"code": 404, "msg": "Task not found"}})
 
 
-def _estimate_remaining(task: Task, db: Session, es: int) -> int:
-    return TaskRepository.estimate_queue_wait(db, task, es)
-
-
 @router.post("/{task_id}/start", response_model=StartTaskRsp)
 def start_task(
     task_id: str,
@@ -266,15 +263,20 @@ def start_task(
     task.status = TaskStatus.PROCESSING.value
     task.current_stage = TaskStage.INITIALIZING.value
     task.progress = 0
+    task.processing_started_at = datetime.utcnow()
     es = (
         settings.alg2_expected_seconds
         if settings.alg_enabled and task.scene == "commodity"
         else settings.alg_expected_seconds
         if settings.alg_enabled
-        else 15
+        else STUB_EXPECTED_SECONDS
     )
-    task.remaining_time = _estimate_remaining(task, db, es)
+    task.remaining_time = TaskRepository.estimate_queue_wait(db, task, es)
     db.commit()
+    logger.info(
+        "start_task task=%s scene=%s es=%d remaining=%d",
+        task_id, task.scene, es, task.remaining_time,
+    )
 
     task_files = db.query(TaskFile).filter(TaskFile.task_id == task_id).all()
     first_video = next(
@@ -349,9 +351,9 @@ def query_task(
             if settings.alg_enabled and task.scene == "commodity"
             else settings.alg_expected_seconds
             if settings.alg_enabled
-            else 15
+            else STUB_EXPECTED_SECONDS
         )
-        remaining = _estimate_remaining(task, db, es)
+        remaining = TaskRepository.estimate_queue_wait(db, task, es)
 
     return GetTaskRsp(
         taskId=task.id,

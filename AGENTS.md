@@ -23,7 +23,7 @@
         ├── extract_frames (stub)
         ├── colmap_sfm (stub)
         ├── train_gs (stub)
-        └── compress (stub)
+        └── finalize (stub)
                 ↓
         MinIO (对象存储)
 ```
@@ -45,7 +45,7 @@
 2. **客户端上传文件** —— 按 `uploadInfos` 逐项 PUT 文件到 MinIO / 本地上传端点
 3. **启动任务**（`POST /tasks/{id}/start`）—— 检查文件存在 → 提交 Celery 链 → 状态 `processing`
 4. **轮询 / SSE 等待** → 内部阶段：`initializing` → `extracting` → `colmap` → `training` → `compressing`
-5. **完成** → 状态 `completed`，可下载输出文件（SPZ / SOG）
+5. **完成** → 状态 `completed`，可下载输出文件（SPZ / SOG / PLY / raw_model）
 
 ---
 
@@ -407,7 +407,8 @@ curl "http://localhost:8000/tasks/{task_id}/download/{filename}?projectId=proj-0
 | `status` | `String(50)` | 外部状态：`pending` / `processing` / `completed` / `failed` |
 | `current_stage` | `String(50)` | 内部阶段：`initializing` / `extracting` / `colmap` / `training` / `compressing` / `completed` / `failed` |
 | `progress` | `Integer` | 进度百分比 0–100 |
-| `remaining_time` | `Integer` | 预计剩余秒数（Stub 固定 15 秒，按 `max(0, 15 - progress // 7)` 递减） |
+| `remaining_time` | `Integer` | 预计剩余秒数（含排队时间，水管模型：es - elapsed + queue） |
+| `processing_started_at` | `DateTime` | 任务开始处理时间（转为 processing 时写入），nullable |
 | `created_at` | `DateTime` | 创建时间（UTC） |
 | `updated_at` | `DateTime` | 更新时间（UTC，`onupdate=datetime.utcnow`） |
 | `completed_at` | `DateTime` | 完成时间（可为空） |
@@ -425,7 +426,7 @@ curl "http://localhost:8000/tasks/{task_id}/download/{filename}?projectId=proj-0
 | `sha256` | `String(64)` | 文件 SHA256 哈希 |
 | `contentLength` | `Integer` | 文件大小（字节） |
 | `fileUrl` | `String(1024)` | 文件存储路径（本地绝对路径或 MinIO 对象名） |
-| `fileRole` | `String(50)` | 文件角色：`source_video` / `source_images` / `compressed_model` |
+| `fileRole` | `String(50)` | 文件角色：`source_video` / `source_images` / `compressed_model` / `raw_model` / `pose_data` |
 | `mimeType` | `String(128)` | MIME 类型（可选） |
 
 ---
@@ -523,7 +524,7 @@ Worker 收到任务
 Celery 任务链在 `backend/worker/tasks/pipeline.py` 中通过 `celery.chain` 编排：
 
 ```python
-# 外部算法模式：external_algorithm → finalize_outputs
+# 外部算法模式：算法任务（commodity_algorithm / external_algorithm）内调 finalize_outputs，非独立 Celery 任务
 # Stub 四阶段模式：extract_frames → run_colmap → train_gaussian_splatting → finalize_outputs
 ```
 
@@ -619,7 +620,7 @@ python scripts/integration_test.py
 
 4. **数据库**：
    - 使用 SQLAlchemy 2.0 声明式 ORM
-   - 所有表通过 `init_db()` 自动创建（无 Alembic 迁移脚本，MVP 阶段简化处理）
+   - 所有表通过 `init_db()` 自动创建；列变更通过 `_ensure_*_column()` 兜底函数增量加列（无 Alembic 迁移脚本，MVP 阶段简化处理）
    - SQLite 场景需设置 `connect_args={"check_same_thread": False}`
 
 5. **任务更新模式**：每个 Celery 任务内部通过 `backend/core/repository.py` 中的 `TaskRepository.update_progress()` 静态方法直接操作数据库，使用 `SessionLocal` 新建独立 session，并用 `try/finally` 确保关闭。`shared.py` 中的旧 `update_task()` 包装已移除。
@@ -631,6 +632,14 @@ python scripts/integration_test.py
 8. **文件路径安全**：上传处理中使用 `os.path.basename()` 防止路径遍历（`tasks.py` 中的 `_safe_filename`）
 
 9. **返回值封装**：API 统一返回 `{"ret": {"code": 0, "msg": "success"}, ...}` 结构（由 Pydantic 模型 `ConnectRet` 提供默认值）
+
+10. **关键代码必须打印日志**：所有核心流程入口和决策点必须添加 `logger.info`，包括但不限于：
+    - `start_task` 设置 `processing_started_at` 和 `remaining_time`
+    - `estimate_queue_wait` 的 ahead 数量、own、queue 估算值
+    - `update_progress` 的 stage/progress/remaining_time 变更
+    - Worker 阶段任务开始和结束
+    - 外部算法 docker run 的退出码和 PLY 搜索结果
+    日志内容需包含 `task_id` 以支持按任务维度过滤排查问题。
 
 ---
 

@@ -3,7 +3,6 @@
 import logging
 import os
 import threading
-import time
 
 import docker
 
@@ -43,13 +42,12 @@ def run_external_algorithm(self, task_id: str, video_path: str):
     TaskRepository.update_progress(task_id, "training", 5)
 
     stop_timer = threading.Event()
-    start_time = time.time()
 
     def poll_progress():
         while not stop_timer.is_set():
-            elapsed = time.time() - start_time
-            pct = min(90, int(5 + elapsed * 85 / max(1, settings.alg_expected_seconds)))
-            TaskRepository.update_progress(task_id, "training", pct)
+            TaskRepository.update_progress(
+                task_id, "training", 0, expected_seconds=settings.alg_expected_seconds
+            )
             stop_timer.wait(10)
 
     timer = threading.Thread(target=poll_progress, daemon=True)

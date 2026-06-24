@@ -30,7 +30,8 @@
 | `status` | `String(50)` | DEFAULT `'pending'` | 外部状态：`pending` → `processing` → `completed` / `failed` |
 | `current_stage` | `String(50)` | DEFAULT `'initializing'` | 内部阶段：`initializing` → `extracting` → `colmap` → `training` → `compressing` → `completed` / `failed` |
 | `progress` | `Integer` | DEFAULT `0` | 进度百分比 0–100 |
-| `remaining_time` | `Integer` | DEFAULT `0` | 预计剩余秒数（Stub 模式固定 15 秒递减） |
+| `remaining_time` | `Integer` | DEFAULT `0` | 预计剩余秒数（含排队时间，水管模型） |
+| `processing_started_at` | `DateTime` | NULLABLE | 任务开始处理时间（转为 processing 时写入） |
 | `created_at` | `DateTime` | DEFAULT `utcnow` | 创建时间（UTC） |
 | `updated_at` | `DateTime` | DEFAULT `utcnow`, `onupdate=utcnow` | 更新时间（UTC） |
 | `completed_at` | `DateTime` | NULLABLE | 完成时间（UTC） |
@@ -97,19 +98,23 @@
 ## ER 关系
 
 ```
-┌──────────────────┐       ┌────────────────────┐
-│      tasks       │       │     task_files     │
-├──────────────────┤       ├────────────────────┤
-│ id (PK)          │──┐    │ id (PK)            │
-│ project_id       │  │    │ task_id (FK) ──────┘
-│ external_code    │  └─── │ fileName           │
-│ scene            │       │ sha256             │
-│ status           │       │ contentLength      │
-│ current_stage    │       │ fileUrl            │
-│ progress         │       │ fileRole           │
-│ remaining_time   │       │ mimeType           │
-│ created_at       │       └────────────────────┘
-└──────────────────┘
+┌──────────────────────────┐       ┌────────────────────┐
+│          tasks           │       │     task_files     │
+├──────────────────────────┤       ├────────────────────┤
+│ id (PK)                  │──┐    │ id (PK)            │
+│ project_id               │  │    │ task_id (FK) ──────┘
+│ external_code            │  └─── │ fileName           │
+│ scene                    │       │ sha256             │
+│ status                   │       │ contentLength      │
+│ current_stage            │       │ fileUrl            │
+│ progress                 │       │ fileRole           │
+│ remaining_time           │       │ mimeType           │
+│ processing_started_at    │       └────────────────────┘
+│ created_at               │
+│ updated_at               │
+│ completed_at             │
+│ error_message            │
+└──────────────────────────┘
 ```
 
 ---
@@ -121,11 +126,11 @@
 def init_db():
     """Create all tables."""
     Base.metadata.create_all(bind=engine)
+    _ensure_client_id_column()
+    _ensure_processing_started_at_column()
 ```
 
-- MVP 阶段无迁移脚本，每次启动自动建表
-- 支持幂等执行（`create_all` 仅创建不存在的表）
-- 生产环境建议切换到 Alembic 管理迁移
+- MVP 阶段无 Alembic 迁移脚本，通过 `init_db()` 内的 `ALTER TABLE` 兜底函数增量加列
 
 ---
 

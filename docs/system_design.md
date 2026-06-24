@@ -26,7 +26,7 @@
            │                 │
            │          ┌──────▼────────────────────────────┐
            │          │        Worker（任务执行层）         │
-           │          │   帧提取 → COLMAP → 训练 → 压缩     │
+            │          │   帧提取 → COLMAP → 训练 → 终化     │
            │          └──────┬────────────────────────────┘
            │                 │ 输出文件（SPZ/SOG）
            │          ┌──────▼────────────────────────────┐
@@ -65,21 +65,24 @@
     ▼
 启动任务 (POST /tasks/{id}/start)
   状态: pending → processing
-  检查文件存在 → 提交四阶段流水线
+  检查文件存在 → 提交流水线（Stub 四阶段链或外部算法 Docker）
     │
     ▼
-Worker 执行流水线
+  Worker 执行流水线（Stub 模式）
   initializing → extracting → colmap → training → compressing
-    │                │
-    │                ├─ 失败 → status: failed
-    │                │
-    ▼                │
-  status: completed  │
-  入库: TaskFile（compressed_model）◄─┘
+      │                │
+      │                ├─ 失败 → status: failed
+      │                │
+      ▼                │
+  外部算法模式：commodity_algorithm / external_algorithm（跳过低阶内部阶段）
+      │                │
+      ▼                │
+  status: completed   │
+  入库: TaskFile（raw_model / compressed_model）◄─┘
     │
     ▼
 用户轮询/SSE 获取进度
-  完成后 → 下载 SPZ/SOG 文件
+  完成后 → 下载 PLY / SPZ / SOG 文件
 ```
 
 ---
@@ -95,10 +98,13 @@ Worker 执行流水线
 | externalCode | string(256) | 外部系统唯一编号（只记录不校验） |
 | scene | enum | 场景类型：`commodity` / `indoor` / `outdoor` |
 | status | enum | 对外状态：`pending` → `processing` → `completed` / `failed` |
-| currentStage | enum | 内部阶段：`initializing` → `extracting` → `colmap` → `training` → `compressing` |
+| currentStage | enum | 内部阶段：`initializing` → `extracting` → `colmap` → `training` → `compressing` → `completed` / `failed` |
 | progress | int | 进度 0–100 |
-| remainingTime | int | 预计剩余秒数 |
-| createdAt / updatedAt / completedAt | datetime | 时间戳 |
+| remainingTime | int | 预计剩余秒数（含排队时间） |
+| processingStartedAt | datetime | 开始处理时间（转为 processing 时写入），nullable |
+| createdAt | datetime | 创建时间（UTC） |
+| updatedAt | datetime | 更新时间（UTC） |
+| completedAt | datetime | 完成时间，nullable |
 | errorMessage | text | 失败时的错误信息 |
 
 ### 3.2 TaskFile（任务文件）
@@ -124,6 +130,8 @@ pending ──[start]──▶ processing ──[success]──▶ completed
 ```
 
 **内部阶段（processing 内）：**
+
+Stub 模式四阶段：
 ```
 initializing (0%)
   → extracting (10%-25%, ~2s)
@@ -132,6 +140,13 @@ initializing (0%)
   → compressing (85%-95%, ~3s)
   → completed (100%)
 ```
+
+外部算法模式（`ALG_ENABLED=true`）：按 scene 路由
+```
+commodity → commodity_algorithm（~360s 预期）
+indoor / outdoor → external_algorithm（~960s 预期）
+```
+两算法任务内部通过 Docker SDK 运行外部容器，阻塞等待退出后 inline 调用 `finalize_outputs` 输出终化。无中间进度阶段明细。超时阈值按 scene 区分：commodity 1800s，其他 3600s。
 
 ---
 
@@ -261,12 +276,15 @@ initializing (0%)
 Worker (Celery task)
   └─ pipeline.py 查 DB 获 task.scene
       ├─ scene=commodity → commodity_algorithm
-      │   └─ docker run alg2_image → bash -c "python -m pip uninstall xformers -y && cd ... && python test.py -d /data/tasks/{id} ..."
-      │       └─ -v /data/3dgs:/data（两算法共用）
-      │   └─ 阻塞等待退出 → UserData/ 下搜 recon_result.ply → finalize_outputs → completed
+      │   └─ docker run alg2_image → bash -c " ... python test.py -d /data/tasks/{id} ..."
+      │       └─ -v /data/3dgs:/data（两算法共用宿主机目录）
+      │   └─ 阻塞等待退出 → UserData/ 下搜 recon_result.ply
+      │   └─ 找到后 inline 调用 finalize_outputs（复制/压缩/上传/写DB）→ completed
       └─ 其他 scene → external_algorithm
           └─ docker run alg_image → python alg_script --input_dir /data/tasks/{id} --output_dir ...
-          └─ 阻塞等待退出 → 搜 point_cloud.ply → finalize_outputs → completed
+              └─ -v /data/3dgs:/data
+          └─ 阻塞等待退出 → 搜 point_cloud.ply
+          └─ 找到后 inline 调用 finalize_outputs → completed
 ```
 
 配置项：

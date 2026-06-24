@@ -113,7 +113,7 @@ python run_local.py
 │   │   └── models/             # 空壳模型层
 │   └── core/                   # 配置、数据库、存储、鉴权
 ├── frontend/                   # 静态前端页面
-├── tests/                      # pytest 测试套件（122+个测试）
+├── tests/                      # pytest 测试套件（135+个测试）
 ├── scripts/                    # 集成测试脚本
 ├── docker-compose.yml          # 五服务容器编排
 ├── run_local.bat / run_local.sh # 一键启动脚本
@@ -215,7 +215,7 @@ bash scripts/docker_test.sh
 | COLMAP | `colmap` | SfM 位姿估计（stub） | ~3s |
 | 训练 | `training` | 3DGS 训练（stub） | ~7s |
 | 压缩 | `compressing` | 格式转换压缩（stub） | ~3s |
-| 完成 | `completed` | 生成 SPZ/SOG 文件 | - |
+| 完成 | `completed` | 生成 PLY / SPZ / SOG 文件 | - |
 
 > **外部算法一体化**：设置 `ALG_ENABLED=true` 可切换为外部 Docker 镜像模式。按 `scene` 字段路由：commodity 走算法 2，indoor/outdoor 走算法 1。配置项见 `docker-compose.yml` worker 环境变量。
 

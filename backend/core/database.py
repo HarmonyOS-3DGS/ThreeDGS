@@ -53,10 +53,24 @@ def _ensure_client_id_column():
             )
             conn.commit()
     except SQLAlchemyError:
-        pass  # 列已存在或表已含此列，静默忽略
+        pass
+
+
+def _ensure_processing_started_at_column():
+    """迁移：为已有 tasks 表添加 processing_started_at 列。"""
+    from sqlalchemy import text
+    from sqlalchemy.exc import SQLAlchemyError
+
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN processing_started_at TIMESTAMP NULL"))
+            conn.commit()
+    except SQLAlchemyError:
+        pass
 
 
 def init_db():
     """自动建表（MVP 阶段无 Alembic 迁移）。"""
     Base.metadata.create_all(bind=engine)
     _ensure_client_id_column()
+    _ensure_processing_started_at_column()

@@ -39,6 +39,7 @@ class Task(Base):
     current_stage = Column(String(50), default=TaskStage.INITIALIZING.value)
     progress = Column(Integer, default=0)
     remaining_time = Column(Integer, default=0)
+    processing_started_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)
