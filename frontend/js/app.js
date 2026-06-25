@@ -82,6 +82,73 @@ if (uploadForm) {
         }
     };
 
+    window.toggleUploadMode = function () {
+        const mode = document.querySelector('input[name="uploadMode"]:checked').value;
+        document.getElementById("local-upload-section").style.display = mode === "local" ? "" : "none";
+        document.getElementById("server-upload-section").style.display = mode === "server" ? "" : "none";
+        if (mode === "server") {
+            document.getElementById("file-input-video").value = "";
+            document.getElementById("file-input-images").value = "";
+        } else {
+            document.getElementById("server-file-path").value = "";
+        }
+        document.getElementById("file-type").value = "source_video";
+        document.getElementById("file-type").dispatchEvent(new Event("change"));
+    };
+
+    async function handleServerUpload(projectId, externalCode, scene, btn, result) {
+        const serverPath = document.getElementById("server-file-path").value.trim();
+        if (!serverPath) {
+            result.innerHTML = `<p style="color:#ef4444;">请输入服务器文件路径</p>`;
+            btn.disabled = false;
+            btn.textContent = "创建任务";
+            return;
+        }
+        const fileName = serverPath.split(/[\\/]/).pop();
+        const fileInfos = [{
+            fileName: fileName,
+            sha256: "",
+            contentLength: 0,
+            fileUrl: "",
+            fileRole: "source_video",
+            mimeType: "video/mp4",
+        }];
+        const res1 = await fetch(API, {
+            method: "POST",
+            headers: { ...apiHeaders(projectId), "Content-Type": "application/json" },
+            body: JSON.stringify({ externalCode, scene, fileInfos }),
+        });
+        const data = await res1.json();
+        if (!res1.ok) {
+            const msg = (data.detail?.ret?.msg) || data.detail || "创建失败";
+            result.innerHTML = `<p style="color:#ef4444;">${msg}</p>`;
+            btn.disabled = false;
+            btn.textContent = "创建任务";
+            return;
+        }
+        const taskId = data.taskId;
+        if (!data.uploadInfos || data.uploadInfos.length === 0) {
+            result.innerHTML = `<p style="color:#ef4444;">后端未返回上传 URL，请联系管理员</p>`;
+            btn.disabled = false;
+            btn.textContent = "创建任务";
+            return;
+        }
+        result.innerHTML = `
+            <p style="color:#22c55e;">任务已创建: <code>${taskId}</code></p>
+            <p style="margin-top:1rem;font-weight:bold;">在 M1 服务器上执行以下命令上传文件：</p>
+            <pre style="background:#1e293b;color:#e2e8f0;padding:1rem;border-radius:6px;overflow-x:auto;font-size:0.85rem;">
+curl -X PUT --data-binary @${serverPath} -H "Content-Type: video/mp4" -w "\\nHTTP %{http_code}\\n" "${data.uploadInfos[0].url}"
+            </pre>
+            <p style="color:#ef4444;font-size:0.85rem;">⚠️ 预签名 URL 有效期为 1 小时，超时需重新创建任务</p>
+            <p style="color:#64748b;font-size:0.85rem;">执行完毕后点击下方按钮启动任务</p>
+            <button onclick="startTask('${projectId}','${taskId}', this)">启动训练</button>
+            <span id="preview-status" style="margin-left:1rem;font-size:0.85rem;color:#64748b;"></span>
+        `;
+        pollTask(projectId, taskId, "preview-status");
+        btn.disabled = false;
+        btn.textContent = "创建任务";
+    }
+
     uploadForm.addEventListener("submit", async (e) => {
         e.preventDefault();
         const btn = document.getElementById("submit-btn");
@@ -92,9 +159,14 @@ if (uploadForm) {
         const projectId = document.getElementById("project-id").value.trim();
         const externalCode = document.getElementById("external-code").value.trim();
         const scene = document.getElementById("scene").value;
+        const uploadMode = document.querySelector('input[name="uploadMode"]:checked').value;
+
+        if (uploadMode === "server") {
+            return handleServerUpload(projectId, externalCode, scene, btn, result);
+        }
+
         const fileType = document.getElementById("file-type").value;
         const fileInput = getActiveInput();
-
         if (!fileInput.files.length) {
             result.innerHTML = `<p style="color:#ef4444;">请选择文件</p>`;
             btn.disabled = false;
@@ -121,7 +193,6 @@ if (uploadForm) {
         }
 
         try {
-            // Step 1: 创建任务，获取上传 URL
             const res1 = await fetch(API, {
                 method: "POST",
                 headers: { ...apiHeaders(projectId), "Content-Type": "application/json" },
@@ -139,19 +210,50 @@ if (uploadForm) {
             const taskId = data.taskId;
             result.innerHTML = `<p style="color:#22c55e;">创建成功: <code>${taskId}</code>，正在上传文件...</p>`;
 
-            // Step 2: 上传文件到预签名 URL
-            for (let i = 0; i < fileInput.files.length; i++) {
-                const file = fileInput.files[i];
+            const files = fileInput.files;
+            let totalLoaded = 0;
+            const totalSize = files.length > 1 ? Array.from(files).reduce((s, f) => s + f.size, 0) : 0;
+
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
                 const urlInfo = data.uploadInfos[i];
+
                 try {
-                    const uploadRes = await fetch(urlInfo.url, {
-                        method: urlInfo.method,
-                        headers: urlInfo.headers || {},
-                        body: file,
+                    await new Promise((resolve, reject) => {
+                        const xhr = new XMLHttpRequest();
+                        let lastUpdate = 0;
+                        xhr.upload.onprogress = (e) => {
+                            if (!e.lengthComputable) {
+                                result.innerHTML = `<p>正在上传 ${file.name}...</p>`;
+                                return;
+                            }
+                            const now = Date.now();
+                            if (now - lastUpdate < 100) return;
+                            lastUpdate = now;
+                            const filePct = Math.round((e.loaded / e.total) * 100);
+                            if (files.length === 1) {
+                                result.innerHTML = `<p>正在上传 ${file.name}... ${filePct}%</p>`;
+                            } else {
+                                const partial = totalLoaded + e.loaded;
+                                const totalPct = Math.round((partial / totalSize) * 100);
+                                result.innerHTML = `<p>总进度 ${totalPct}% (文件 ${i + 1}/${files.length})<br><small>${file.name}: ${filePct}%</small></p>`;
+                            }
+                        };
+                        xhr.onload = () => {
+                            if (xhr.status >= 200 && xhr.status < 300) {
+                                totalLoaded += file.size;
+                                resolve();
+                            } else {
+                                reject(new Error(`upload failed: ${xhr.status}`));
+                            }
+                        };
+                        xhr.onerror = () => reject(new Error("network error"));
+                        xhr.open(urlInfo.method, urlInfo.url);
+                        for (const [k, v] of Object.entries(urlInfo.headers || {})) {
+                            xhr.setRequestHeader(k, v);
+                        }
+                        xhr.send(file);
                     });
-                    if (!uploadRes.ok) {
-                        throw new Error(`upload failed: ${uploadRes.status}`);
-                    }
                 } catch (uploadErr) {
                     result.innerHTML = `<p style="color:#ef4444;">文件 ${file.name} 上传失败</p>
                         <button onclick="startTask('${projectId}','${taskId}', this)">跳过上传/启动训练</button>`;

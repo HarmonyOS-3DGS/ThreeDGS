@@ -42,9 +42,22 @@
                     <option value="source_images">图片（可多选）</option>
                 </select>
 
-                <label for="file-input-video">选择文件</label>
-                <input type="file" id="file-input-video" accept="video/*">
-                <input type="file" id="file-input-images" accept="image/*" multiple style="display:none;">
+                <label for="upload-mode">上传方式</label>
+                <div class="upload-mode-group">
+                    <label><input type="radio" name="uploadMode" value="local" checked onchange="toggleUploadMode()"> 本地上传</label>
+                    <label><input type="radio" name="uploadMode" value="server" onchange="toggleUploadMode()"> 服务器文件</label>
+                </div>
+
+                <div id="local-upload-section">
+                    <label for="file-input-video">选择文件</label>
+                    <input type="file" id="file-input-video" accept="video/*">
+                    <input type="file" id="file-input-images" accept="image/*" multiple style="display:none;">
+                </div>
+
+                <div id="server-upload-section" style="display:none;">
+                    <label for="server-file-path">服务器文件路径</label>
+                    <input type="text" id="server-file-path" placeholder="/data/3dgs/uploads/video.mp4">
+                </div>
 
                 <button type="submit" id="submit-btn">创建任务</button>
             </form>
