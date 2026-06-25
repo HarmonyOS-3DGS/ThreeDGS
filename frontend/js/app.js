@@ -3,9 +3,9 @@ const API = APP_CONFIG.API_BASE;
 let ACCESS_TOKEN = sessionStorage.getItem("access_token");
 
 function showLoginForm() {
-    document.getElementById("auth-client-id").style.display = "";
-    document.getElementById("auth-client-secret").style.display = "";
-    document.querySelector("#auth-bar button").style.display = "";
+    document.querySelectorAll(".auth-field").forEach(el => el.style.display = "");
+    const authBtn = document.querySelector(".auth-area button");
+    if (authBtn) authBtn.style.display = "";
     ACCESS_TOKEN = null;
     sessionStorage.removeItem("access_token");
     sessionStorage.removeItem("client_id");
@@ -14,9 +14,14 @@ function showLoginForm() {
 const origFetch = window.fetch;
 window.fetch = function(url, opts) {
     return origFetch(url, opts).then(r => {
-        if (r.status === 401 && ACCESS_TOKEN) {
-            showLoginForm();
-            document.getElementById("auth-status").textContent = "登录已过期，请重新登录";
+        if (r.status === 401) {
+            if (ACCESS_TOKEN) {
+                showLoginForm();
+                document.getElementById("auth-status").textContent = "登录已过期，请重新登录";
+            }
+            ACCESS_TOKEN = null;
+            sessionStorage.removeItem("access_token");
+            sessionStorage.removeItem("client_id");
         }
         return r;
     });
@@ -24,10 +29,12 @@ window.fetch = function(url, opts) {
 
 if (ACCESS_TOKEN) {
     const cid = sessionStorage.getItem("client_id") || "";
-    document.getElementById("auth-client-id").style.display = "none";
-    document.getElementById("auth-client-secret").style.display = "none";
-    document.querySelector("#auth-bar button").style.display = "none";
+    document.querySelectorAll(".auth-field").forEach(el => el.style.display = "none");
+    const authBtn2 = document.querySelector(".auth-area button");
+    if (authBtn2) authBtn2.style.display = "none";
     document.getElementById("auth-status").textContent = cid ? `已登录: ${cid}` : "已登录";
+} else {
+    document.getElementById("auth-status").textContent = "";
 }
 
 async function login() {
@@ -48,9 +55,11 @@ async function login() {
     ACCESS_TOKEN = data.access_token;
     sessionStorage.setItem("access_token", ACCESS_TOKEN);
     sessionStorage.setItem("client_id", cid);
-    document.getElementById("auth-client-id").style.display = "none";
-    document.getElementById("auth-client-secret").style.display = "none";
-    document.querySelector("#auth-bar button").style.display = "none";
+    document.getElementById("auth-client-id").value = "";
+    document.getElementById("auth-client-secret").value = "";
+    document.querySelectorAll(".auth-field").forEach(el => el.style.display = "none");
+    const authBtn2 = document.querySelector(".auth-area button");
+    if (authBtn2) authBtn2.style.display = "none";
     const el = document.getElementById("auth-status");
     if (el) el.textContent = `已登录: ${cid}`;
     setTimeout(login, Math.max(60000, (data.expires_in - 300)) * 1000);
@@ -98,6 +107,7 @@ if (uploadForm) {
 
     async function handleServerUpload(projectId, externalCode, scene, btn, result) {
         const serverPath = document.getElementById("server-file-path").value.trim();
+        const fileType = document.getElementById("file-type").value;
         if (!serverPath) {
             result.innerHTML = `<p style="color:#ef4444;">请输入服务器文件路径</p>`;
             btn.disabled = false;
@@ -110,7 +120,7 @@ if (uploadForm) {
             sha256: "",
             contentLength: 0,
             fileUrl: "",
-            fileRole: "source_video",
+            fileRole: fileType,
             mimeType: "video/mp4",
         }];
         const res1 = await fetch(API, {
@@ -134,7 +144,7 @@ if (uploadForm) {
             return;
         }
         result.innerHTML = `
-            <p style="color:#22c55e;">任务已创建: <code>${taskId}</code></p>
+            <p style="color:#22c55e;">任务已创建: <span style="font-family:inherit">${taskId}</span></p>
             <p style="margin-top:1rem;font-weight:bold;">在 M1 服务器上执行以下命令上传文件：</p>
             <pre style="background:#1e293b;color:#e2e8f0;padding:1rem;border-radius:6px;overflow-x:auto;font-size:0.85rem;">
 curl -X PUT --data-binary @${serverPath} -H "Content-Type: video/mp4" -w "\\nHTTP %{http_code}\\n" "${data.uploadInfos[0].url}"
@@ -153,6 +163,12 @@ curl -X PUT --data-binary @${serverPath} -H "Content-Type: video/mp4" -w "\\nHTT
         e.preventDefault();
         const btn = document.getElementById("submit-btn");
         const result = document.getElementById("result");
+
+        if (!ACCESS_TOKEN) {
+            result.innerHTML = `<p style="color:#dc2626;">请先登录后再创建任务</p>`;
+            return;
+        }
+
         btn.disabled = true;
         btn.textContent = "提交中...";
 
@@ -208,7 +224,7 @@ curl -X PUT --data-binary @${serverPath} -H "Content-Type: video/mp4" -w "\\nHTT
             }
 
             const taskId = data.taskId;
-            result.innerHTML = `<p style="color:#22c55e;">创建成功: <code>${taskId}</code>，正在上传文件...</p>`;
+            result.innerHTML = `<p style="color:#22c55e;">创建成功: <span style="font-family:inherit">${taskId}</span>，正在上传文件...</p>`;
 
             const files = fileInput.files;
             let totalLoaded = 0;
@@ -264,7 +280,7 @@ curl -X PUT --data-binary @${serverPath} -H "Content-Type: video/mp4" -w "\\nHTT
             }
 
             result.innerHTML = `
-                <p style="color:#22c55e;">任务创建成功: <code>${taskId}</code></p>
+                <p style="color:#22c55e;">任务创建成功: <span style="font-family:inherit">${taskId}</span></p>
                 <button onclick="startTask('${projectId}','${taskId}', this)">启动训练</button>
                 <span id="preview-status" style="margin-left:1rem;font-size:0.85rem;color:#64748b;"></span>
             `;
@@ -336,37 +352,44 @@ if (taskList) {
         }
     };
 
+    function stageLabel(t) {
+        if (t.status === "processing") return ` / ${t.currentStage}`;
+        return "";
+    }
+
     async function loadTasks() {
         try {
             const res = await fetch(API, { headers: apiHeaders(currentProjectId) });
+            if (res.status === 401) {
+                taskList.innerHTML = `<tr><td colspan="8" class="empty-state">请先登录后再查看任务列表</td></tr>`;
+                return;
+            }
             if (!res.ok) {
-                taskList.innerHTML = `<li style="text-align:center;color:#64748b;">无任务 (${res.status})</li>`;
+                taskList.innerHTML = `<tr><td colspan="8" class="empty-state">无任务 (${res.status})</td></tr>`;
                 return;
             }
             const data = await res.json();
             if (!data.items || data.items.length === 0) {
-                taskList.innerHTML = `<li style="text-align:center;color:#64748b;">暂无任务 (项目: ${currentProjectId})</li>`;
+                taskList.innerHTML = `<tr><td colspan="8" class="empty-state">暂无任务 (项目: ${currentProjectId})</td></tr>`;
                 return;
             }
             taskList.innerHTML = data.items.map(t => `
-                <li class="project-item">
-                    <div>
-                        <strong>${t.taskId}</strong>
-                        <div style="font-size:0.8rem;color:#64748b;margin-top:0.25rem;">
-                            ${t.currentStage} · ${t.scene} · 剩余 ${t.remainingTime}s
-                        </div>
-                    </div>
-                    <div style="text-align:right;">
-                        <span class="status-badge status-${t.status}">${t.status}</span>
-                        <div class="progress-bar" style="width:120px;margin-top:0.5rem;">
-                            <div class="progress-fill" style="width:${t.progress}%">${t.progress}%</div>
-                        </div>
-                        <a href="/viewer.html?id=${t.taskId}&projectId=${currentProjectId}">查看</a>
-                    </div>
-                </li>
+                <tr>
+                    <td>${t.taskId}</td>
+                    <td>${t.externalCode || "-"}</td>
+                    <td>${t.scene}</td>
+                    <td><span class="status-badge status-${t.status}">${t.status}</span>${stageLabel(t)}</td>
+                    <td>
+                        <div class="progress-mini"><div class="progress-mini-fill" style="width:${t.progress}%"></div></div>
+                        ${t.progress}%
+                    </td>
+                    <td style="white-space:nowrap;">${toBeijingTime(t.createdAt)}</td>
+                    <td style="white-space:nowrap;">${toBeijingTime(t.updatedAt)}</td>
+                    <td><a href="/viewer.html?id=${t.taskId}&projectId=${currentProjectId}">查看</a></td>
+                </tr>
             `).join("");
         } catch {
-            taskList.innerHTML = `<li style="text-align:center;color:#ef4444;">加载失败</li>`;
+            taskList.innerHTML = `<tr><td colspan="8" class="empty-state">加载失败</td></tr>`;
         }
     }
     loadTasks();

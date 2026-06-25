@@ -4,64 +4,74 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>3DGS Platform - 上传</title>
-    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/style.css?v=3">
 </head>
 <body>
-    <div class="container">
-        <h1>3D Gaussian Splatting 平台</h1>
-        <nav class="nav">
-            <a href="/index.html">上传</a>
+    <nav class="topnav">
+        <div class="logo">3DGS Platform</div>
+        <div class="nav-links">
+            <a href="/index.html" class="active">上传</a>
             <a href="/status.html">任务列表</a>
-        </nav>
-        <div id="auth-bar" style="margin:8px 0;padding:8px;background:#f1f5f9;border-radius:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-            <input id="auth-client-id" placeholder="client_id" size="20" style="padding:4px 8px;border:1px solid #cbd5e1;border-radius:4px;">
-            <input id="auth-client-secret" type="password" placeholder="secret" size="30" style="padding:4px 8px;border:1px solid #cbd5e1;border-radius:4px;">
-            <button onclick="login()" style="padding:4px 16px;background:#3b82f6;color:#fff;border:none;border-radius:4px;cursor:pointer;">登录</button>
-            <span id="auth-status" style="font-size:0.85rem;color:#64748b;"></span>
         </div>
+        <div class="auth-area">
+            <div class="auth-field">
+                <label>账号</label>
+                <input id="auth-client-id" placeholder="client_id">
+            </div>
+            <div class="auth-field">
+                <label>密码</label>
+                <input id="auth-client-secret" type="password" placeholder="secret">
+            </div>
+            <button onclick="login()">登录</button>
+            <span id="auth-status" class="auth-status"></span>
+        </div>
+    </nav>
 
+    <div class="content">
+        <h2 class="page-title">创建训练任务</h2>
         <div class="card">
-            <h2>创建训练任务</h2>
-            <form id="upload-form">
-                <label for="project-id">项目 ID</label>
-                <input type="text" id="project-id" name="projectId" placeholder="输入项目 ID" required maxlength="20">
+            <div class="form-row">
+                <form id="upload-form">
+                    <label for="project-id">项目 ID</label>
+                    <input type="text" id="project-id" name="projectId" placeholder="输入项目 ID" required maxlength="20">
 
-                <label for="external-code">外部系统唯一码</label>
-                <input type="text" id="external-code" name="externalCode" placeholder="输入外部系统标识码" required maxlength="256">
+                    <label for="external-code">外部系统唯一码</label>
+                    <input type="text" id="external-code" name="externalCode" placeholder="输入外部系统标识码" required maxlength="256">
 
-                <label for="scene">场景类型</label>
-                <select id="scene" name="scene" required>
-                    <option value="commodity">商品</option>
-                    <option value="indoor" selected>室内</option>
-                    <option value="outdoor">室外</option>
-                </select>
+                    <label for="scene">场景类型</label>
+                    <select id="scene" name="scene" required>
+                        <option value="commodity">商品</option>
+                        <option value="indoor" selected>室内</option>
+                        <option value="outdoor">室外</option>
+                    </select>
 
-                <label for="file-type">文件类型</label>
-                <select id="file-type">
-                    <option value="source_video">视频</option>
-                    <option value="source_images">图片（可多选）</option>
-                </select>
+                    <label for="file-type">文件类型</label>
+                    <select id="file-type">
+                        <option value="source_video">视频</option>
+                        <option value="source_images">图片（可多选）</option>
+                    </select>
 
-                <label for="upload-mode">上传方式</label>
-                <div class="upload-mode-group">
-                    <label><input type="radio" name="uploadMode" value="local" checked onchange="toggleUploadMode()"> 本地上传</label>
-                    <label><input type="radio" name="uploadMode" value="server" onchange="toggleUploadMode()"> 服务器文件</label>
-                </div>
+                    <label>上传方式</label>
+                    <div class="upload-mode-group">
+                        <label><input type="radio" name="uploadMode" value="local" checked onchange="toggleUploadMode()"> 本地上传</label>
+                        <label><input type="radio" name="uploadMode" value="server" onchange="toggleUploadMode()"> 服务器文件</label>
+                    </div>
 
-                <div id="local-upload-section">
-                    <label for="file-input-video">选择文件</label>
-                    <input type="file" id="file-input-video" accept="video/*">
-                    <input type="file" id="file-input-images" accept="image/*" multiple style="display:none;">
-                </div>
+                    <div id="local-upload-section">
+                        <label for="file-input-video">选择文件</label>
+                        <input type="file" id="file-input-video" accept="video/*">
+                        <input type="file" id="file-input-images" accept="image/*" multiple style="display:none;">
+                    </div>
 
-                <div id="server-upload-section" style="display:none;">
-                    <label for="server-file-path">服务器文件路径</label>
-                    <input type="text" id="server-file-path" placeholder="/data/3dgs/uploads/video.mp4">
-                </div>
+                    <div id="server-upload-section" style="display:none;">
+                        <label for="server-file-path">服务器文件路径</label>
+                        <input type="text" id="server-file-path" placeholder="/data/3dgs/uploads/video.mp4">
+                    </div>
 
-                <button type="submit" id="submit-btn">创建任务</button>
-            </form>
-            <div id="result" style="margin-top:1rem;"></div>
+                    <button type="submit" id="submit-btn" class="btn-primary">创建任务</button>
+                </form>
+                <div id="result" style="margin-top:1rem;"></div>
+            </div>
         </div>
     </div>
     <script src="/js/config.js"></script>

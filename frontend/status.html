@@ -3,31 +3,56 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3DGS Platform - 任务状态</title>
-    <link rel="stylesheet" href="/css/style.css">
+    <title>3DGS Platform - 任务列表</title>
+    <link rel="stylesheet" href="/css/style.css?v=3">
 </head>
 <body>
-    <div class="container">
-        <h1>任务列表</h1>
-        <nav class="nav">
+    <nav class="topnav">
+        <div class="logo">3DGS Platform</div>
+        <div class="nav-links">
             <a href="/index.html">上传</a>
-            <a href="/status.html">任务列表</a>
-        </nav>
-        <div id="auth-bar" style="margin:8px 0;padding:8px;background:#f1f5f9;border-radius:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-            <input id="auth-client-id" placeholder="client_id" size="20" style="padding:4px 8px;border:1px solid #cbd5e1;border-radius:4px;">
-            <input id="auth-client-secret" type="password" placeholder="secret" size="30" style="padding:4px 8px;border:1px solid #cbd5e1;border-radius:4px;">
-            <button onclick="login()" style="padding:4px 16px;background:#3b82f6;color:#fff;border:none;border-radius:4px;cursor:pointer;">登录</button>
-            <span id="auth-status" style="font-size:0.85rem;color:#64748b;"></span>
+            <a href="/status.html" class="active">任务列表</a>
         </div>
-        <div class="card">
-            <div style="margin-bottom:1rem;">
-                <label for="project-id-input" style="margin-right:0.5rem;">项目 ID:</label>
-                <input type="text" id="project-id-input" placeholder="输入项目 ID" maxlength="20" style="padding:0.4rem;width:200px;">
-                <button onclick="switchProject()" style="padding:0.4rem 1rem;">查看</button>
+        <div class="auth-area">
+            <div class="auth-field">
+                <label>账号</label>
+                <input id="auth-client-id" placeholder="client_id">
             </div>
-            <ul id="project-list" class="project-list">
-                <li style="text-align:center;color:#64748b;">加载中...</li>
-            </ul>
+            <div class="auth-field">
+                <label>密码</label>
+                <input id="auth-client-secret" type="password" placeholder="secret">
+            </div>
+            <button onclick="login()">登录</button>
+            <span id="auth-status" class="auth-status"></span>
+        </div>
+    </nav>
+
+    <div class="content">
+        <h2 class="page-title">任务列表</h2>
+        <div class="card">
+            <div class="filter-bar" style="margin-bottom:1rem;">
+                <label for="project-id-input">项目 ID</label>
+                <input type="text" id="project-id-input" placeholder="输入项目 ID" maxlength="20">
+                <button onclick="switchProject()">查询</button>
+            </div>
+
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>任务 ID</th>
+                        <th>外部编码</th>
+                        <th>场景</th>
+                        <th>状态 / 阶段</th>
+                        <th>进度</th>
+                        <th>创建时间</th>
+                        <th>更新时间</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="project-list">
+                    <tr><td colspan="8" class="empty-state">加载中...</td></tr>
+                </tbody>
+            </table>
         </div>
     </div>
     <script src="/js/config.js"></script>

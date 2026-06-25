@@ -51,12 +51,15 @@ class StartTaskRsp(BaseModel):
 class GetTaskRsp(BaseModel):
     ret: ConnectRet = ConnectRet()
     taskId: str
+    externalCode: str = ""
     status: str
     currentStage: str
     progress: int
     remainingTime: int
     scene: str
     errorMessage: str = ""
+    createdAt: str = ""
+    updatedAt: str = ""
     downloadInfos: list[UrlInfo] = []
 
 

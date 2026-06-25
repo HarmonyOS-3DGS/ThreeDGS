@@ -1,57 +1,145 @@
-/* 3DGS Platform styles */
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: #0f172a; color: #e2e8f0; min-height: 100vh;
+    background: #f1f5f9; color: #1e293b; min-height: 100vh;
 }
-.container { max-width: 800px; margin: 0 auto; padding: 2rem; }
-h1 { text-align: center; margin-bottom: 2rem; color: #38bdf8; }
+
+/* Top nav */
+.topnav {
+    display: flex; align-items: center; justify-content: space-between;
+    background: #fff; padding: 0 1.5rem; height: 56px;
+    border-bottom: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+.topnav .logo { font-weight: 700; font-size: 1.1rem; color: #0ea5e9; white-space: nowrap; }
+.topnav .nav-links { display: flex; gap: 1.5rem; flex-shrink: 0; }
+.topnav .nav-links a {
+    text-decoration: none; color: #64748b; font-size: 0.9rem; font-weight: 500;
+    padding: 0.25rem 0; border-bottom: 2px solid transparent; transition: 0.15s;
+}
+.topnav .nav-links a:hover { color: #0ea5e9; }
+.topnav .nav-links a.active { color: #0ea5e9; border-bottom-color: #0ea5e9; }
+.topnav .auth-area {
+    display: flex; gap: 0.5rem; align-items: center; font-size: 0.85rem; flex-shrink: 0;
+}
+.topnav .auth-area .auth-field {
+    display: flex; align-items: center; gap: 0.3rem;
+}
+.topnav .auth-area .auth-field label {
+    color: #64748b; font-size: 0.8rem; font-weight: 400; white-space: nowrap;
+}
+.topnav .auth-area input {
+    padding: 0.3rem 0.5rem; border: 1px solid #cbd5e1; border-radius: 4px;
+    background: #f8fafc; color: #1e293b; font-size: 0.85rem; width: 120px; margin: 0;
+}
+.topnav .auth-area button {
+    padding: 0.3rem 0.8rem; border-radius: 4px; border: none;
+    background: #0ea5e9; color: #fff; font-size: 0.85rem; cursor: pointer; white-space: nowrap;
+}
+.topnav .auth-area button:hover { background: #0284c7; }
+.topnav .auth-area .auth-status { color: #64748b; font-size: 0.85rem; white-space: nowrap; }
+
+/* Content area - full width */
+.content { padding: 2rem; }
+.page-title { font-size: 1.25rem; font-weight: 600; margin-bottom: 1.5rem; color: #1e293b; }
+
+/* Card */
 .card {
-    background: #1e293b; border-radius: 12px; padding: 2rem;
-    margin-bottom: 1.5rem; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+    background: #fff; border-radius: 10px; padding: 1.5rem 2rem;
+    margin-bottom: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
 }
-label { display: block; margin-bottom: 0.5rem; color: #94a3b8; }
-input[type="text"], input[type="file"] {
-    width: 100%; padding: 0.75rem; border-radius: 8px;
-    border: 1px solid #334155; background: #0f172a; color: #e2e8f0;
-    margin-bottom: 1rem;
+
+/* Form - reasonable widths */
+.form-row { max-width: 600px; }
+label { display: block; margin-bottom: 0.4rem; color: #475569; font-size: 0.9rem; font-weight: 500; }
+input[type="text"], select {
+    padding: 0.55rem 0.75rem; border-radius: 6px;
+    border: 1px solid #cbd5e1; background: #f8fafc; color: #1e293b;
+    margin-bottom: 1rem; font-size: 0.9rem; width: 360px; max-width: 100%;
 }
+input[type="file"] {
+    padding: 0.55rem 0.75rem; border-radius: 6px;
+    border: 1px solid #cbd5e1; background: #f8fafc; color: #1e293b;
+    margin-bottom: 1rem; font-size: 0.9rem; width: 360px; max-width: 100%;
+}
+input:focus { outline: none; border-color: #0ea5e9; box-shadow: 0 0 0 3px rgba(14,165,233,0.1); }
+
+/* Default buttons */
 button {
-    width: 100%; padding: 0.875rem; border-radius: 8px; border: none;
-    background: #0ea5e9; color: white; font-size: 1rem; cursor: pointer;
+    padding: 0.5rem 1rem; border-radius: 6px; border: none;
+    background: #0ea5e9; color: #fff; font-size: 0.9rem; cursor: pointer;
     transition: background 0.2s;
 }
 button:hover { background: #0284c7; }
-button:disabled { background: #475569; cursor: not-allowed; }
-.progress-bar {
-    width: 100%; height: 24px; background: #334155; border-radius: 12px;
-    overflow: hidden; margin: 1rem 0;
+button:disabled { background: #94a3b8; cursor: not-allowed; }
+.btn-primary { width: 360px; max-width: 100%; padding: 0.65rem 1.2rem; }
+
+/* Upload mode radio */
+.upload-mode-group { display: flex; gap: 1.5rem; margin-bottom: 1rem; }
+.upload-mode-group label { font-weight: 400; font-size: 0.9rem; color: #1e293b; display: inline-flex; align-items: center; gap: 0.3rem; cursor: pointer; }
+
+/* Table */
+.data-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.data-table th {
+    text-align: left; padding: 0.6rem 0.75rem; background: #f8fafc;
+    color: #64748b; font-weight: 600; border-bottom: 2px solid #e2e8f0;
+    white-space: nowrap;
 }
-.progress-fill {
+.data-table td {
+    padding: 0.6rem 0.75rem; border-bottom: 1px solid #f1f5f9;
+    vertical-align: middle; color: #1e293b;
+}
+.data-table tr:hover td { background: #f8fafc; }
+.data-table a { color: #0ea5e9; text-decoration: none; }
+.data-table a:hover { text-decoration: underline; }
+
+/* Progress bar */
+.progress-mini {
+    width: 80px; height: 6px; background: #e2e8f0; border-radius: 3px;
+    overflow: hidden; display: inline-block; vertical-align: middle; margin-right: 0.4rem;
+}
+.progress-mini-fill {
+    height: 100%; background: #0ea5e9; border-radius: 3px;
+    transition: width 0.5s ease;
+}
+
+/* Status badge */
+.status-badge {
+    display: inline-block; padding: 0.15rem 0.6rem; border-radius: 999px;
+    font-size: 0.8rem; font-weight: 500; white-space: nowrap;
+}
+.status-pending { background: #e2e8f0; color: #475569; }
+.status-processing { background: #dbeafe; color: #1d4ed8; }
+.status-completed { background: #dcfce7; color: #15803d; }
+.status-failed { background: #fee2e2; color: #dc2626; }
+
+/* Detail page */
+.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+.detail-grid .field-label { color: #64748b; font-size: 0.85rem; }
+.detail-grid .field-value { color: #1e293b; font-weight: 500; font-size: 0.9rem; word-break: break-all; }
+.detail-progress { margin: 1.5rem 0; }
+.detail-progress .progress-bar {
+    width: 100%; max-width: 600px; height: 24px; background: #e2e8f0; border-radius: 12px;
+    overflow: hidden; margin: 0.5rem 0;
+}
+.detail-progress .progress-fill {
     height: 100%; background: linear-gradient(90deg, #0ea5e9, #22d3ee);
     transition: width 0.5s ease; display: flex; align-items: center;
-    justify-content: center; font-size: 0.75rem; color: #0f172a; font-weight: bold;
-    min-width: 36px;
+    justify-content: center; font-size: 0.75rem; color: #fff; font-weight: bold;
+    min-width: 0;
 }
-.status-badge {
-    display: inline-block; padding: 0.25rem 0.75rem; border-radius: 999px;
-    font-size: 0.875rem; font-weight: 500;
+.detail-downloads { margin-top: 1.5rem; }
+.detail-downloads a {
+    display: inline-block; margin: 0.25rem 1rem 0.25rem 0;
+    color: #0ea5e9; font-size: 0.9rem;
 }
-.status-pending { background: #475569; }
-.status-processing { background: #3b82f6; color: white; }
-.status-extracting { background: #f59e0b; color: #0f172a; }
-.status-colmap { background: #f59e0b; color: #0f172a; }
-.status-training { background: #8b5cf6; color: white; }
-.status-compressing { background: #ec4899; color: white; }
-.status-completed { background: #22c55e; color: #0f172a; }
-.status-failed { background: #ef4444; color: white; }
-.project-list { list-style: none; }
-.project-item {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 1rem; border-bottom: 1px solid #334155;
-}
-.project-item:last-child { border-bottom: none; }
-.viewer-container { width: 100%; height: 600px; border-radius: 12px; background: #000; }
-.nav { display: flex; gap: 1rem; justify-content: center; margin-bottom: 2rem; }
-.nav a { color: #38bdf8; text-decoration: none; }
-.nav a:hover { text-decoration: underline; }
+
+/* Empty / error state */
+.empty-state { text-align: center; color: #94a3b8; padding: 3rem 0; font-size: 0.9rem; }
+
+/* Project filter */
+.filter-bar { display: flex; gap: 0.5rem; align-items: center; }
+.filter-bar label { margin: 0; font-weight: 500; white-space: nowrap; }
+.filter-bar input { width: 180px; margin: 0; }
+
+/* Pre block for curl command */
+pre { background: #f1f5f9; border: 1px solid #e2e8f0; color: #1e293b; padding: 1rem; border-radius: 6px; overflow-x: auto; font-size: 0.85rem; }

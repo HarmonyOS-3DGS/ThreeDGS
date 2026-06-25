@@ -40,6 +40,10 @@ def _safe_filename(filename: str) -> str:
     return os.path.basename(filename)
 
 
+def _fmt_dt(dt):
+    return dt.strftime("%Y-%m-%d %H:%M:%S") if dt else ""
+
+
 def _gen_upload_url(task_id: str, fi: FileInfo, token: str = "") -> UrlInfo:
     """生成上传 URL：MinIO 模式返回预签名 PUT URL，本地模式返回 API 端点。"""
     safe_name = _safe_filename(fi.fileName)
@@ -94,12 +98,15 @@ def list_tasks(
     items = [
         GetTaskRsp(
             taskId=t.id,
+            externalCode=t.external_code,
             status=t.status,
             currentStage=t.current_stage,
             progress=t.progress,
             remainingTime=t.remaining_time,
             scene=t.scene,
             errorMessage=t.error_message or "",
+            createdAt=_fmt_dt(t.created_at),
+            updatedAt=_fmt_dt(t.updated_at),
             downloadInfos=[],
         )
         for t in tasks
@@ -275,7 +282,10 @@ def start_task(
     db.commit()
     logger.info(
         "start_task task=%s scene=%s es=%d remaining=%d",
-        task_id, task.scene, es, task.remaining_time,
+        task_id,
+        task.scene,
+        es,
+        task.remaining_time,
     )
 
     task_files = db.query(TaskFile).filter(TaskFile.task_id == task_id).all()
@@ -324,8 +334,9 @@ def query_task(
 ):
     """查询任务状态及输出文件."""
     client_id, token = client_id_token
+    admin_id = get_admin_client_id()
     q = db.query(Task).filter(Task.id == task_id, Task.project_id == projectId)
-    if client_id:
+    if client_id and client_id != admin_id:
         q = q.filter(Task.client_id == client_id)
     task = q.first()
     if not task:
@@ -357,12 +368,15 @@ def query_task(
 
     return GetTaskRsp(
         taskId=task.id,
+        externalCode=task.external_code,
         status=task.status,
         currentStage=task.current_stage,
         progress=task.progress,
         remainingTime=remaining,
         scene=task.scene,
         errorMessage=task.error_message or "",
+        createdAt=_fmt_dt(task.created_at),
+        updatedAt=_fmt_dt(task.updated_at),
         downloadInfos=download_infos,
     )
 

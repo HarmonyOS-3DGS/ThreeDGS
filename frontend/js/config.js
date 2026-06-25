@@ -4,5 +4,14 @@
  */
 const APP_CONFIG = window.APP_CONFIG || {
     API_BASE: "/tasks",
+    AUTH_URL: "/auth/token",
     DEFAULT_PROJECT_ID: "default",
 };
+
+function toBeijingTime(utcStr) {
+    if (!utcStr) return "-";
+    const d = new Date(utcStr.replace(" ", "T") + "Z");
+    const bj = new Date(d.getTime() + 8 * 3600000);
+    const pad = n => String(n).padStart(2, "0");
+    return `${bj.getUTCFullYear()}-${pad(bj.getUTCMonth() + 1)}-${pad(bj.getUTCDate())} ${pad(bj.getUTCHours())}:${pad(bj.getUTCMinutes())}:${pad(bj.getUTCSeconds())}`;
+}
