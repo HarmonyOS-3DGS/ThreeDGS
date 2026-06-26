@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 @app.task(bind=True, time_limit=settings.alg_max_seconds)
-def run_external_algorithm(self, task_id: str, video_path: str):
+def run_external_algorithm(self, task_id: str, video_path: str, scene: str = ""):
     """通过 Docker SDK 执行外部算法镜像，等待退出，收集 PLY 结果。"""
     host_data = settings.alg_host_data_dir
     container_data = "/data"
@@ -34,7 +34,11 @@ def run_external_algorithm(self, task_id: str, video_path: str):
         container_input,
         "--output_dir",
         container_output,
+        "--with_mask",
+        "true",
     ]
+    if scene == "outdoor":
+        docker_cmd += ["--is_outdoor", "true"]
 
     volumes = {host_data: {"bind": container_data, "mode": "rw"}}
     logger.info("alg start task=%s image=%s cmd=%s", task_id, settings.alg_image, docker_cmd)

@@ -113,3 +113,4 @@ class TestPipeline:
             assert len(args) == 1  # 只有算法任务
             task_name = args[0].name
             assert "external_algorithm" in task_name
+            assert args[0].kwargs.get("scene") == "indoor"

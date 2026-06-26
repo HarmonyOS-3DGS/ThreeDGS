@@ -265,7 +265,9 @@ class TestQueueWaitIncludeQueue:
         task = self._make_task(
             db_session, id="self", external_code="self", created_at=datetime(2020, 1, 2)
         )
-        with_queue = TaskRepository.estimate_queue_wait(db_session, task, es=100, include_queue=True)
+        with_queue = TaskRepository.estimate_queue_wait(
+            db_session, task, es=100, include_queue=True
+        )
         without_queue = TaskRepository.estimate_queue_wait(
             db_session, task, es=100, include_queue=False
         )
@@ -273,7 +275,9 @@ class TestQueueWaitIncludeQueue:
 
     def test_include_queue_false_returns_own_only(self, db_session):
         task = self._make_task(db_session)
-        remaining = TaskRepository.estimate_queue_wait(db_session, task, es=100, include_queue=False)
+        remaining = TaskRepository.estimate_queue_wait(
+            db_session, task, es=100, include_queue=False
+        )
         assert abs(remaining - 100) <= 1
 
 
@@ -313,7 +317,9 @@ class TestUpdateProgress:
 
     def test_failed_keeps_explicit_progress(self, db_session):
         self._create_task(db_session, processing_started_at=datetime.utcnow())
-        TaskRepository.update_progress("test-update-progress", "failed", 50, status="failed", error="oops")
+        TaskRepository.update_progress(
+            "test-update-progress", "failed", 50, status="failed", error="oops"
+        )
         task = self._read_task(db_session)
         assert task.progress == 50
         assert task.status == "failed"
@@ -357,9 +363,7 @@ class TestUpdateProgress:
         started_at = datetime.utcnow() - timedelta(seconds=10)
         self._create_task(db_session, processing_started_at=started_at, scene="indoor")
         # Pass expected_seconds=100 explicitly
-        TaskRepository.update_progress(
-            "test-update-progress", "training", 0, expected_seconds=100
-        )
+        TaskRepository.update_progress("test-update-progress", "training", 0, expected_seconds=100)
         task = self._read_task(db_session)
         # remaining would be ~90 if es=100 was used, not 9989
         assert task.remaining_time < 200

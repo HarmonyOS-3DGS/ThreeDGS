@@ -38,7 +38,7 @@ def submit_training_pipeline(task_id: str, video_path: str):
                 scene,
             )
         else:
-            steps = [run_external_algorithm.s(task_id, video_path)]
+            steps = [run_external_algorithm.s(task_id, video_path, scene=scene)]
             logger.info(
                 "pipeline routing: task=%s scene=%s -> external_algorithm",
                 task_id,

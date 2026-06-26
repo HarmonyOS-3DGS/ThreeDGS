@@ -146,7 +146,13 @@ class TaskRepository:
         queue = int(min(pipes))
         logger.info(
             "task=%s es=%d ahead=%d wc=%d own=%d queue=%d remaining=%d",
-            task.id, es, len(ahead_r), wc, int(own), queue, int(own) + queue,
+            task.id,
+            es,
+            len(ahead_r),
+            wc,
+            int(own),
+            queue,
+            int(own) + queue,
         )
         return int(own) + queue
 
