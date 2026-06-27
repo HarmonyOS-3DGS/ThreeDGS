@@ -56,6 +56,7 @@ class MinioStorageClient:
                 secret_key=settings.minio_secret_key,
                 secure=settings.minio_secure,
             )
+            self.client  # 触发 client property → _ensure_bucket，避免嵌套递归
         return self._presign_client
 
     def _ensure_bucket(self):

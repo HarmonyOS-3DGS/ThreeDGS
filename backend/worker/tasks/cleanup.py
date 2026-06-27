@@ -50,20 +50,19 @@ def _cleanup_storage(task_id: str):
 
 
 def _cleanup_local_files():
-    """查询 DB 中过期的任务，遍历本地目录，有则删除，无则跳过。不改 DB。"""
-    cutoff = datetime.utcnow() - timedelta(days=settings.task_completed_ttl_days)
+    """查询 DB 中过期的 completed/failed 任务，清理本地文件和 MinIO 对象。不改 DB。
+
+    文件 TTL（默认 7 天）应小于 DB TTL（默认 30 天），
+    保证文件先于 DB 记录被清理，避免孤立文件残留。
+    pending 任务未上传文件，无需清理。
+    """
+    cutoff = datetime.utcnow() - timedelta(days=settings.task_files_ttl_days)
     db = SessionLocal()
     try:
         tasks = (
             db.query(Task)
             .filter(
-                Task.status.in_(
-                    [
-                        TaskStatus.PENDING.value,
-                        TaskStatus.COMPLETED.value,
-                        TaskStatus.FAILED.value,
-                    ]
-                ),
+                Task.status.in_([TaskStatus.COMPLETED.value, TaskStatus.FAILED.value]),
                 Task.updated_at < cutoff,
             )
             .all()

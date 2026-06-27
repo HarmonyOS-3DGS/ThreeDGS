@@ -16,7 +16,7 @@ from backend.worker.tasks.cleanup import (
 
 class TestCleanupLocalFiles:
     def test_cleanup_expired_tasks(self, db_session):
-        old = datetime.utcnow() - timedelta(days=35)
+        old = datetime.utcnow() - timedelta(days=14)  # > files_ttl_days (7)
         fresh = datetime.utcnow() - timedelta(days=1)
         for i, (status, updated) in enumerate(
             [
@@ -48,7 +48,8 @@ class TestCleanupLocalFiles:
         with patch("backend.worker.tasks.cleanup._cleanup_storage", side_effect=fake_storage):
             _cleanup_local_files()
 
-        assert set(called) == {"local-0", "local-1", "local-2"}  # only old ones
+        # pending 不清文件, 只清理旧的 completed/failed
+        assert set(called) == {"local-1", "local-2"}
 
     def test_cleanup_skips_processing(self, db_session):
         task = Task(

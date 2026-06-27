@@ -31,6 +31,7 @@ services:
       - OUTPUT_TYPES=${OUTPUT_TYPES:-["raw_model"]}
       - LOG_FILE=/app/logs/3dgs.log
       - WORKER_COUNT=1
+      - TASK_FILES_TTL_DAYS=${TASK_FILES_TTL_DAYS:-7}
     depends_on:
       db:
         condition: service_healthy
@@ -99,6 +100,7 @@ services:
       - ALG2_EXPECTED_SECONDS=360
       - ALG2_MAX_SECONDS=1800
       - ALG2_SHM_SIZE=64g
+      - TASK_FILES_TTL_DAYS=${TASK_FILES_TTL_DAYS:-7}
       - OUTPUT_TYPES=${OUTPUT_TYPES:-["raw_model"]}
       - LOG_FILE=/app/logs/3dgs.log
     depends_on:

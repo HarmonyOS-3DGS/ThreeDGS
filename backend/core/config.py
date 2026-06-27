@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     # Task lifecycle
     task_pending_ttl_hours: int = Field(default=24)
     task_completed_ttl_days: int = Field(default=30)
+    task_files_ttl_days: int = Field(default=7)
 
     # Pipeline defaults
     default_fps: int = Field(default=5)
