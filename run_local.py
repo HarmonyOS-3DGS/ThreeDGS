@@ -17,6 +17,7 @@ os.environ.setdefault("USE_LOCAL_STORAGE", "true")
 os.environ.setdefault("LOCAL_STORAGE_DIR", "./local_storage")
 os.environ.setdefault("SERVICE_ACCOUNTS", "dev-admin:sk-debug")
 os.environ.setdefault("JWT_SECRET_KEY", "dev-jwt-secret-not-for-production")
+os.environ.setdefault("SERVE_FRONTEND", "true")
 
 # 创建本地存储目录
 os.makedirs("local_storage", exist_ok=True)

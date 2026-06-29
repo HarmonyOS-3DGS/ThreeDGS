@@ -1,5 +1,6 @@
 """FastAPI 应用入口。"""
 
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -33,5 +34,6 @@ app.include_router(auth.router)
 app.include_router(tasks.router)
 app.include_router(sse.router)
 
-# 挂载静态文件（前端页面）
-app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
+# 挂载静态文件（前端页面）。生产环境通过 nginx 独立端口服务，此处关闭。
+if os.environ.get("SERVE_FRONTEND", "false").lower() == "true":
+    app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")

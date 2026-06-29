@@ -109,7 +109,7 @@ async function pollTask() {
     const token = getToken();
     if (!token) return;
     try {
-        const res = await fetch(`/tasks/${taskId}`, {
+        const res = await fetch(`${APP_CONFIG.API_BASE}/${taskId}`, {
             headers: { "Authorization": `Bearer ${token}`, "projectId": projectId },
         });
         if (res.status === 401) {

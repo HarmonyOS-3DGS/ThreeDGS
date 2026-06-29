@@ -1,0 +1,11 @@
+FROM nginx:alpine
+
+# 模板配置（含 ${FRONTEND_API_BASE} 占位符）
+COPY deploy/nginx-minio.conf /etc/nginx/templates/default.conf.template
+
+# entrypoint：envsubst 后启动 nginx
+COPY deploy/docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
+ENTRYPOINT ["/docker-entrypoint.sh"]
+CMD ["nginx", "-g", "daemon off;"]

@@ -42,7 +42,7 @@ async function login() {
     const secret = document.getElementById("auth-client-secret")?.value;
     if (!cid || !secret) return;
     const basic = btoa(`${cid}:${secret}`);
-    const res = await fetch(`${API.replace("/tasks", "")}/auth/token`, {
+    const res = await fetch(APP_CONFIG.AUTH_URL, {
         method: "POST",
         headers: { "Authorization": `Basic ${basic}` },
     });

@@ -32,6 +32,7 @@ services:
       - LOG_FILE=/app/logs/3dgs.log
       - WORKER_COUNT=1
       - TASK_FILES_TTL_DAYS=${TASK_FILES_TTL_DAYS:-7}
+      - SERVE_FRONTEND=true
     depends_on:
       db:
         condition: service_healthy
