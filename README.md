@@ -49,7 +49,7 @@ bash run_local.sh
 
 访问：
 - **上传页面**: http://localhost:8000/index.html
-- **查看器**: http://localhost:8000/viewer.html?id={task_id}
+- **查看器**: http://localhost:8000/viewer.html?id={task_id}&projectId={project_id}
 - **API 文档**: http://localhost:8000/docs
 
 > 本地模式使用 SQLite + 内存 Celery + 本地文件存储，零外部依赖。
@@ -109,14 +109,23 @@ python run_local.py
 │   │   └── schemas/
 │   │       └── task.py         # Task 相关 Pydantic 模型
 │   ├── worker/                 # Celery 任务和模型 Stub
-│   │   ├── tasks/              # 4阶段流水线任务
+│   │   ├── tasks/              # 流水线任务（4阶段链 / 外部算法 / 清理）
 │   │   └── models/             # 空壳模型层
 │   └── core/                   # 配置、数据库、存储、鉴权
 ├── frontend/                   # 静态前端页面
-├── tests/                      # pytest 测试套件（135+个测试）
-├── scripts/                    # 集成测试脚本
+├── tests/                      # pytest 测试套件（150+个测试）
+├── scripts/                    # 集成测试脚本与工具
+│   ├── real_test.py            # 线程内集成测试（推荐）
+│   ├── integration_test.py     # 子进程集成测试
+│   ├── generate_keys.py        # JWT 密钥 + 凭证生成
+│   └── docker_test.sh          # Docker 端到端测试
 ├── docker-compose.yml          # 五服务容器编排
+├── Dockerfile.api              # API 服务镜像
+├── Dockerfile.worker           # Worker 服务镜像
+├── Dockerfile.nginx            # nginx 镜像（envsubst 模板）
+├── ruff.toml                   # ruff 代码规范配置
 ├── run_local.bat / run_local.sh # 一键启动脚本
+├── .env.example                # 生产配置模板
 ├── .env.local                  # 本地轻量配置
 └── requirements.txt
 ```
@@ -231,7 +240,7 @@ bash scripts/docker_test.sh
 | 任务队列 | Celery + Redis | Celery + 内存 broker |
 | 数据库 | PostgreSQL + SQLAlchemy | SQLite + SQLAlchemy |
 | 对象存储 | MinIO | 本地文件系统 |
-| 鉴权 | Authorization Header（app_auth + project_auth） | Authorization Header（app_auth + project_auth） |
+| 鉴权 | JWT Bearer Token（OAuth2 Client Credentials） | JWT Bearer Token（OAuth2 Client Credentials） |
 | 前端 | 原生 HTML/JS | 原生 HTML/JS |
 | 容器化 | Docker Compose | 无需 Docker |
 | 测试 | pytest + httpx | pytest + httpx |

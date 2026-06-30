@@ -24,6 +24,48 @@ servers:
     description: 本地开发服务器
 
 paths:
+  /auth/token:
+    post:
+      summary: 换取 JWT Token
+      description: |
+        使用 OAuth2 Client Credentials 流程，通过 Basic Auth 换取 JWT Bearer Token。
+        后续请求使用 Authorization: Bearer <JWT>。
+      tags:
+        - auth
+      operationId: getToken
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          description: "Basic base64(client_id:secret)"
+          schema:
+            type: string
+            example: "Basic cGFydG5lci1hOnNrLXh4eA=="
+      responses:
+        "200":
+          description: Token 颁发成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                    description: JWT access_token
+                    example: "eyJhbGciOiJIUzI1NiIs..."
+                  token_type:
+                    type: string
+                    example: "bearer"
+                  expires_in:
+                    type: integer
+                    example: 3600
+        "401":
+          description: 凭证无效
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorRsp"
+
   /tasks:
     get:
       summary: 列出任务
@@ -206,7 +248,7 @@ paths:
   /tasks/{taskId}/download/{objectId}:
     get:
       summary: 下载输出文件
-      description: 下载任务的输出文件（SPZ/SOG）。Docker 模式 302 重定向到 MinIO 预签名 URL。
+      description: 下载任务的输出文件（raw_model PLY / SPZ / SOG）。Docker 模式 302 重定向到 MinIO 预签名 URL。
       鉴权同时支持 Header 和 Query 参数（`projectId` 和 `Authorization`）。
       tags:
         - fileTransfer
@@ -378,7 +420,7 @@ components:
           description: 文件路径
         fileRole:
           type: string
-          description: 文件角色：source_video / source_images / compressed_model / raw_model
+          description: "文件角色：source_video / source_images / compressed_model / raw_model / pose_data"
           example: "source_video"
         mimeType:
           type: string
@@ -434,13 +476,17 @@ components:
 
     GetTaskRsp:
       type: object
-      required: [ret, taskId, status, currentStage, progress, remainingTime, scene, downloadInfos]
+      required: [ret, taskId, externalCode, status, currentStage, progress, remainingTime, scene, errorMessage, createdAt, updatedAt, downloadInfos]
       properties:
         ret:
           $ref: "#/components/schemas/ConnectRet"
         taskId:
           type: string
           example: "332011480592384"
+        externalCode:
+          type: string
+          description: 外部系统唯一 ID
+          example: "EXT-001"
         status:
           type: string
           enum: [pending, processing, completed, failed]
@@ -462,6 +508,18 @@ components:
         scene:
           type: string
           example: "indoor"
+        errorMessage:
+          type: string
+          description: 错误信息（失败时不为空）
+          example: ""
+        createdAt:
+          type: string
+          description: 创建时间（UTC，前端展示时转为北京时间）
+          example: "2026-06-30 04:00:00"
+        updatedAt:
+          type: string
+          description: 更新时间（UTC，前端展示时转为北京时间）
+          example: "2026-06-30 04:05:00"
         downloadInfos:
           type: array
           description: 可下载文件列表（完成后非空），每项为预签名下载 URL

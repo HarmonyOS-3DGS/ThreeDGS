@@ -26,6 +26,7 @@
 | `id` | `String(32)` | PK, Snowflake 递增 | 纯数字，B-tree 友好，如 `332011480592384` |
 | `project_id` | `String(20)` | NOT NULL, INDEX | 项目 ID，从请求 Header `projectId` 传入 |
 | `external_code` | `String(256)` | NOT NULL, INDEX | 外部系统唯一标识码 |
+| `client_id` | `String(64)` | NOT NULL DEFAULT `''`, INDEX | 任务所属 client，JWT 中提取，用于数据隔离 |
 | `scene` | `String(32)` | NOT NULL | 场景类型枚举：`commodity` / `indoor` / `outdoor` |
 | `status` | `String(50)` | DEFAULT `'pending'` | 外部状态：`pending` → `processing` → `completed` / `failed` |
 | `current_stage` | `String(50)` | DEFAULT `'initializing'` | 内部阶段：`initializing` → `extracting` → `colmap` → `training` → `compressing` → `completed` / `failed` |
@@ -103,13 +104,14 @@
 ├──────────────────────────┤       ├────────────────────┤
 │ id (PK)                  │──┐    │ id (PK)            │
 │ project_id               │  │    │ task_id (FK) ──────┘
-│ external_code            │  └─── │ fileName           │
-│ scene                    │       │ sha256             │
-│ status                   │       │ contentLength      │
-│ current_stage            │       │ fileUrl            │
-│ progress                 │       │ fileRole           │
-│ remaining_time           │       │ mimeType           │
-│ processing_started_at    │       └────────────────────┘
+│ external_code            │  │    │ fileName           │
+│ client_id                │  └─── │ sha256             │
+│ scene                    │       │ contentLength      │
+│ status                   │       │ fileUrl            │
+│ current_stage            │       │ fileRole           │
+│ progress                 │       │ mimeType           │
+│ remaining_time           │       └────────────────────┘
+│ processing_started_at    │
 │ created_at               │
 │ updated_at               │
 │ completed_at             │
@@ -140,6 +142,7 @@ def init_db():
 |----|------|------|------|
 | `tasks` | `project_id` | B-tree | 按项目查询任务列表 |
 | `tasks` | `external_code` | B-tree | 按外部编码查重和查询 |
+| `tasks` | `client_id` | B-tree | 按 client_id 隔离数据 |
 | `task_files` | `task_id` | B-tree | 外键关联查询（SQLAlchemy 自动创建） |
 
 ---

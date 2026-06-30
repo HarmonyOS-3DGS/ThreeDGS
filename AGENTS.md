@@ -77,9 +77,12 @@
 - `httpx==0.27.0`
 - `pytest==8.2.0` / `pytest-asyncio==0.23.8` / `pytest-cov==5.0.0`
 - `python-multipart==0.0.9`
-- `aiofiles==23.2.0`
+- `aiofiles==24.1.0`
 - `sse-starlette==2.1.0`
 - `uuid-utils==0.6.0`
+- `ruff==0.14.0`
+- `docker==7.1.0`
+- `PyJWT==2.8.0`
 
 ---
 
@@ -94,7 +97,9 @@
 │   │   ├── routers/
 │   │   │   ├── __init__.py
 │   │   │   ├── tasks.py        # 创建/列表/启动/查询/上传/下载任务
-│   │   │   └── sse.py          # GET /tasks/{id}/events（SSE 实时进度，内部调试）
+│   │   │   ├── sse.py          # GET /tasks/{id}/events（SSE 实时进度，内部调试）
+│   │   │   └── auth.py         # POST /auth/token（JWT Token 颁发）
+│   │   ├── _serve.py           # uvicorn 启动入口（注入统一日志配置）
 │   │   └── schemas/
 │   │       ├── __init__.py
 │   │       └── task.py         # CreateTaskReq / CreateTaskRsp / StartTaskRsp / GetTaskRsp / TaskListResponse / TaskStatusEvent / FileInfo / UrlInfo
@@ -113,6 +118,7 @@
 │   │   ├── minio_storage.py    # MinIO 对象存储封装（MinioStorageClient）
 │   │   ├── constants.py        # 共享常量（SUPPORTED_VIDEO_EXTS）
 │   │   ├── path_utils.py       # 路径工具（task_output_path）
+│   │   ├── logging.py          # 统一日志配置（dictConfig，控制台 + 滚动文件）
 │   │   └── models/             # ORM 模型（从 database.py 拆分）
 │   │       ├── __init__.py
 │   │       ├── task.py         # Task 模型 + TaskStatus / TaskStage 枚举
@@ -120,6 +126,7 @@
 │   └── worker/                 # Celery Worker
 │       ├── __init__.py
 │       ├── celery_app.py       # Celery 应用配置 + Beat 定时任务调度
+│       ├── compressor.py       # 压缩引擎纯函数（无 Celery/DB 依赖）
 │       ├── models/             # Stub 模型层
 │       │   ├── __init__.py
 │       │   ├── preprocessor.py # FFmpeg / COLMAP 空壳（生成 dummy 帧和文本文件）
@@ -142,17 +149,26 @@
 │   ├── css/style.css
 │   └── js/
 │       ├── app.js              # 上传表单 + 启动任务 + 任务列表轮询
-│       └── viewer.js           # SSE 连接 + 状态展示 + 下载链接加载
+│       ├── viewer.js           # SSE 连接 + 状态展示 + 下载链接加载
+│       └── config.js           # 全局配置（APP_CONFIG.API_BASE / AUTH_URL / toBeijingTime）
 ├── tests/                      # pytest 测试套件
 │   ├── conftest.py             # 全局 fixture（SQLite 文件模式 test.db、TestClient、DB 自动清理）
 │   ├── test_api/               # API 端点测试
 │   │   ├── __init__.py
-│   │   ├── test_upload.py      # 创建任务（JSON / multipart / 参数校验）
+│   │   ├── test_upload.py      # 创建任务（JSON / 参数校验 / 上传文件）
 │   │   ├── test_projects.py    # 查询任务、启动任务、状态流转
-│   │   └── test_sse.py         # SSE 端点连通性
+│   │   ├── test_sse.py         # SSE 端点连通性
+│   │   └── test_auth_token.py  # POST /auth/token 端点
 │   ├── test_core/              # 核心模块测试
 │   │   ├── __init__.py
-│   │   └── test_storage.py     # MinIO 客户端 mock 测试
+│   │   ├── test_storage.py     # MinIO 客户端 mock 测试（upload/download/presigned/delete）
+│   │   ├── test_local_storage.py   # LocalStorageClient 测试
+│   │   ├── test_repository.py      # TaskRepository（排队估算/进度更新/过期清理/client_id 过滤）
+│   │   ├── test_auth.py         # JWT decode / 过期 / 签名错误
+│   │   ├── test_auth_config.py  # SERVICE_ACCOUNTS 解析
+│   │   ├── test_config_output_types.py # OUTPUT_TYPES 配置校验
+│   │   ├── test_file_utils.py   # 文件魔数检测（MP4/AVI/MKV/JPEG/PNG/GIF/WEBP）
+│   │   └── test_id_generator.py # Snowflake ID 单调递增 / 并发唯一
 │   └── test_worker/            # Worker 任务测试
 │       ├── __init__.py
 │       ├── test_extract_frames.py
@@ -167,17 +183,21 @@
 │       ├── test_cleanup.py      # 过期任务清理逻辑测试
 ├── scripts/                    # 集成测试脚本
 │   ├── real_test.py            # 线程内启动 API + Worker 的真实 HTTP 测试（推荐）
-│   └── integration_test.py     # 子进程启动 API + Worker 的集成测试（字段名较旧，可能需更新）
+│   ├── integration_test.py     # 子进程启动 API + Worker 的集成测试（字段名较旧，可能需更新）
+│   └── generate_keys.py        # JWT 密钥 + ServiceAccount 凭证生成
 ├── docs/                       # 文档
 │   ├── openapi.yaml            # OpenAPI 3.0 接口文档
 │   └── reference_guide.md      # 参考指南
 ├── deploy/                     # 多机分布式部署模板
 │   ├── m1-docker-compose.yml   # M1 入口机编排（nginx + api + redis + db + MinIO + Worker）
 │   ├── mi-docker-compose.yml   # Worker 节点编排（MinIO + Worker）
-│   └── nginx-minio.conf        # nginx 反代配置（80→api，9000→MinIO 集群）
+│   ├── docker-entrypoint.sh    # nginx entrypoint（envsubst + scheme 校验 + strip trailing slash）
+│   └── nginx-minio.conf        # nginx 反代配置（80→api，8888→前端，9003→MinIO 集群）
 ├── docker-compose.yml          # 5 服务编排（api / worker / redis / db / minio）+ 3 个卷
 ├── Dockerfile.api              # API 服务镜像（python:3.11-slim）
 ├── Dockerfile.worker           # Worker 服务镜像（python:3.11-slim）
+├── Dockerfile.nginx            # nginx 镜像（alpine + envsubst 模板替换）
+├── ruff.toml                   # ruff 配置（py311, line-length 100, E/W/F/I/UP）
 ├── run_local.bat               # Windows 一键本地启动脚本
 ├── run_local.sh                # Linux / Mac 一键本地启动脚本
 ├── requirements.txt            # Python 依赖（精确版本锁定）
@@ -239,6 +259,13 @@
 | `ALG2_MAX_SECONDS` | `1800` | commodity 最大超时时间（秒） |
 | `ALG2_SHM_SIZE` | `64g` | commodity 算法 shm-size |
 | `WORKER_COUNT` | `1` | Worker 数量（用于排队时间估算，分布式场景设为实际 Worker 数） |
+| `OUTPUT_TYPES` | `["raw_model"]` | 输出类型选择：`raw_model` / `spz` / `sog`（逗号分隔） |
+| `TASK_FILES_TTL_DAYS` | `7` | 已完成/失败任务的文件清理 TTL（天），应小于 `TASK_COMPLETED_TTL_DAYS` |
+| `JWT_EXPIRE_SECONDS` | `3600` | JWT Token 有效期（秒） |
+| `SERVE_FRONTEND` | `false` | 是否在 API 端口直接提供前端页面（生产关走 nginx，本地开） |
+| `FRONTEND_API_BASE` | `""` | 前端 JS 调 API 的地址前缀（空 = 相对路径，设值 = 绝对路径经 ELB） |
+| `ALG2_PLY_USERDATA_REL` | `dist_so/UserData` | commodity 算法 PLY 搜索相对路径 |
+| `ALG2_PLY_SUBDIR_PREFIX` | `test_task_id_tasks_` | commodity 算法 PLY 子目录前缀 |
 
 ---
 
@@ -462,8 +489,8 @@ curl "http://localhost:8000/tasks/{task_id}/download/{filename}?projectId=proj-0
 ### 前端架构
 
 - **无构建工具**：纯 HTML/CSS/JS，直接由 FastAPI `StaticFiles(directory="frontend", html=True)` 挂载
-- **API Key 硬编码**：`frontend/js/app.js` 和 `frontend/js/viewer.js` 中硬编码默认 Key `3dgs-dev-2026`
-- **上传页面**（`index.html`）：表单包含 `projectId`、`externalCode`、`scene`、`files`，`app.js` 计算 SHA-256 后构造 `multipart/form-data` 提交
+- **动态鉴权 + CONFIG_INJECT**：前端通过登录表单获取 JWT，存入 `sessionStorage`；nginx 通过 sub_filter 注入 `<!--CONFIG_INJECT-->` 为 `window.APP_CONFIG`，config.js 提供 fallback 默认值
+- **上传页面**（`index.html`）：表单包含 `projectId`、`externalCode`、`scene`、`fileType`（视频/图片），`app.js` 计算 SHA-256 后通过 JSON body 创建任务，再通过 XMLHttpRequest 逐文件上传到预签名 URL
 - **任务列表**（`status.html`）：`app.js` 每 5 秒轮询 `GET /tasks`，展示阶段、进度、剩余时间、查看链接
 - **查看器**（`viewer.html`）：`viewer.js` 通过 URL 参数获取 `id` 和 `projectId`，建立 SSE 连接实时更新进度条；完成后展示下载链接
 
@@ -496,7 +523,7 @@ Worker 收到任务
               └─ -v /data/3dgs:/data
           └─ 阻塞等待退出
           └─ output/alg_ply_subdir/ 下搜 point_cloud.ply（取最新）
-  └─ finalize_outputs（通用输出处理器：复制/压缩/上传/写DB）
+  └─ run_finalize（内联：复制/压缩/上传/写DB）
   └─ completed
 ```
 
@@ -552,15 +579,25 @@ Celery 任务链在 `backend/worker/tasks/pipeline.py` 中通过 `celery.chain` 
 
 | 文件 | 测试内容 |
 |------|---------|
-| `test_api/test_upload.py` | JSON / multipart 创建任务、必填参数缺失、缺少 `projectId` |
+| `test_api/test_upload.py` | JSON 创建任务、必填参数缺失、缺少 `projectId`、上传文件、重复上传 |
 | `test_api/test_projects.py` | 查询任务、启动任务、重复启动、启动后状态变更 |
 | `test_api/test_sse.py` | SSE 端点连通性、`text/event-stream` Content-Type、不存在任务 |
+| `test_api/test_auth_token.py` | POST /auth/token 端点、无效凭证、缺少 Basic Auth |
 | `test_worker/test_commodity_algorithm.py` | commodity 算法 Docker SDK 执行、PLY 搜索、故障处理 |
 | `test_core/test_storage.py` | MinIO 客户端的 `upload_file` / `download_file` / `get_presigned_url` / `delete_object` mock 测试 |
+| `test_core/test_local_storage.py` | LocalStorageClient 测试 |
+| `test_core/test_repository.py` | TaskRepository（排队估算/进度更新/过期清理/client_id 过滤） |
+| `test_core/test_auth.py` | JWT decode / 过期 / 签名错误 |
+| `test_core/test_auth_config.py` | SERVICE_ACCOUNTS 解析 |
+| `test_core/test_config_output_types.py` | OUTPUT_TYPES 配置校验 |
+| `test_core/test_file_utils.py` | 文件魔数检测（MP4/AVI/MKV/JPEG/PNG/GIF/WEBP） |
+| `test_core/test_id_generator.py` | Snowflake ID 单调递增 / 并发唯一 |
 | `test_worker/test_extract_frames.py` | 帧提取任务执行 |
 | `test_worker/test_colmap.py` | COLMAP 任务执行 |
 | `test_worker/test_train.py` | 训练任务执行 |
-| `test_worker/test_compress.py` | 压缩任务执行 |
+| `test_worker/test_compressor_module.py` | 压缩模块独立测试 |
+| `test_worker/test_file_utils.py` | ensure_input_video + find_newest_ply |
+| `test_worker/test_finalize.py` | output 终化任务测试 |
 | `test_worker/test_pipeline.py` | `submit_training_pipeline` 的 `chain` mock 断言 |
 | `test_worker/test_cleanup.py` | `_cleanup_storage` 三路径（本地/MinIO/算法2）、过期 pending/completed/failed DB 清理、`_cleanup_local_files` 查询并清理 |
 

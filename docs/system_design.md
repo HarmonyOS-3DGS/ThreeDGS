@@ -96,6 +96,7 @@
 | id | string(32) | 主键，Snowflake 递增纯数字，如 `332011480592384` |
 | projectId | string(20) | 项目标识 |
 | externalCode | string(256) | 外部系统唯一编号（只记录不校验） |
+| clientId | string(64) | 任务所属 client，JWT 中提取，用于数据隔离 |
 | scene | enum | 场景类型：`commodity` / `indoor` / `outdoor` |
 | status | enum | 对外状态：`pending` → `processing` → `completed` / `failed` |
 | currentStage | enum | 内部阶段：`initializing` → `extracting` → `colmap` → `training` → `compressing` → `completed` / `failed` |
@@ -249,7 +250,7 @@ indoor / outdoor → external_algorithm（~960s 预期）
 | status=pending 超时未启动 | 24h（可配置） | 删除 DB 记录 | M1 Beat → Redis → 任意 Worker |
 | status=processing 超时无更新 | 按 scene 计算（5分钟检测） | 标记为 failed | M1 Beat → Redis → 任意 Worker |
 | status=completed/failed 超时 | 30d（可配置） | 删除 DB 记录 | M1 Beat → Redis → 任意 Worker |
-| 本地文件（所有状态） | 30d（可配置） | 删除本地磁盘文件，有则删无则跳过 | 每个 Worker 进程内嵌守护线程 |
+| 本地文件（completed/failed） | 7d（可配置） | 删除本地磁盘文件及 MinIO 对象，pending/processing 不清理 | 每个 Worker 进程内嵌守护线程 |
 
 ---
 
@@ -305,6 +306,8 @@ Worker (Celery task)
 | `ALG2_SCRIPT` | 算法 2 入口脚本 |
 | `ALG2_EXTRA_ARGS` | 算法 2 额外命令行参数 |
 | `ALG2_PLY_NAME` | 算法 2 PLY 文件名 |
+| `ALG2_PLY_USERDATA_REL` | 算法 2 PLY 搜索相对路径 |
+| `ALG2_PLY_SUBDIR_PREFIX` | 算法 2 PLY 子目录前缀 |
 | `ALG2_EXPECTED_SECONDS` | 算法 2 预计执行时间（秒） |
 | `ALG2_MAX_SECONDS` | 算法 2 最大超时时间（秒） |
 | `ALG2_SHM_SIZE` | 算法 2 共享内存大小 |
