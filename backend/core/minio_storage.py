@@ -55,6 +55,7 @@ class MinioStorageClient:
                 access_key=settings.minio_access_key,
                 secret_key=settings.minio_secret_key,
                 secure=settings.minio_secure,
+                region="us-east-1",
             )
             self.client  # 触发 client property → _ensure_bucket，避免嵌套递归
         return self._presign_client
